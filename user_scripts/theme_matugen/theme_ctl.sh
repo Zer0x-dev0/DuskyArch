@@ -48,6 +48,26 @@ readonly ACTIVE_THEME_DIR="${WALLPAPER_ROOT}/active_theme"
 readonly LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/theme_ctl.lock"
 readonly FLOCK_TIMEOUT_SEC=30
 
+# --- Multi-Profile Configuration ---
+readonly GENERATED_DIR="${HOME}/.config/matugen/generated"
+readonly PROFILES_ROOT="${HOME}/.config/matugen/generated_profiles"
+readonly PROFILE_CONFIGS_DIR="${HOME}/.config/matugen/profiles"
+readonly PROFILE_GEN_PY="${HOME}/user_scripts/theme_matugen/gen_profile_configs.py"
+readonly APPLY_HOOKS_SH="${PROFILE_CONFIGS_DIR}/apply_hooks.sh"
+
+# Every color scheme type matugen can extract from the wallpaper
+readonly ALL_SCHEMES=(
+    scheme-content
+    scheme-expressive
+    scheme-fidelity
+    scheme-fruit-salad
+    scheme-monochrome
+    scheme-neutral
+    scheme-rainbow
+    scheme-tonal-spot
+    scheme-vibrant
+)
+
 # State Defaults
 readonly DEFAULT_MODE="dark"
 readonly DEFAULT_TYPE="scheme-tonal-spot"
@@ -674,6 +694,8 @@ generate_colors() {
     if command -v gsettings >/dev/null 2>&1; then
         gsettings set org.gnome.desktop.interface color-scheme "prefer-${THEME_MODE}" 2>/dev/null || true
     fi
+
+    sweep_profiles image "$img"
 }
 
 apply_solid_color() {
@@ -701,6 +723,65 @@ apply_solid_color() {
     if command -v gsettings >/dev/null 2>&1; then
         gsettings set org.gnome.desktop.interface color-scheme "prefer-${THEME_MODE}" 2>/dev/null || true
     fi
+
+    sweep_profiles color "$hex"
+}
+
+build_matugen_base() {
+    local -n out_ref=$1
+    out_ref=(--mode "$THEME_MODE")
+    [[ "$BASE16_BACKEND" != "disable" && -n "$BASE16_BACKEND" ]] && out_ref+=(--base16-backend "$BASE16_BACKEND")
+    [[ "$MATUGEN_CONTRAST" != "disable" && "$MATUGEN_CONTRAST" != "0" && "$MATUGEN_CONTRAST" != "0.0" && -n "$MATUGEN_CONTRAST" ]] && out_ref+=(--contrast "$MATUGEN_CONTRAST")
+    out_ref+=(--source-color-index "$SOURCE_COLOR_INDEX")
+}
+
+ensure_profile_configs() {
+    command -v python3 >/dev/null 2>&1 || return 1
+    [[ -f "$PROFILE_GEN_PY" ]] || return 1
+    python3 "$PROFILE_GEN_PY" >/dev/null 2>&1
+}
+
+# Generate every color scheme profile (all ALL_SCHEMES) from the same source
+# into generated_profiles/<scheme>/ with post_hooks suppressed. Only the active
+# scheme is rendered by the caller with the main config, so apps reload once.
+sweep_profiles() {
+    local mode="$1"
+    local source="$2"
+    local scheme
+    local -a base=()
+    local -a pids=()
+    local pid
+
+    ensure_profile_configs || { warn "Profile sweep skipped (config helper unavailable)."; return 0; }
+
+    build_matugen_base base
+
+    for scheme in "${ALL_SCHEMES[@]}"; do
+        [[ "$scheme" == "$MATUGEN_TYPE" ]] && continue
+        {
+            if [[ "$mode" == "image" ]]; then
+                matugen -q -c "${PROFILE_CONFIGS_DIR}/${scheme}.toml" -t "$scheme" "${base[@]}" image "$source"
+            else
+                matugen -q -c "${PROFILE_CONFIGS_DIR}/${scheme}.toml" -t "$scheme" "${base[@]}" color hex "$source"
+            fi
+        } >/dev/null 2>&1 &
+        pids+=($!)
+    done
+
+    for pid in "${pids[@]}"; do
+        wait "$pid" || warn "Profile sweep: one or more schemes failed to generate."
+    done
+
+    ensure_dir "$PROFILES_ROOT/$MATUGEN_TYPE"
+    rsync -a --delete "$GENERATED_DIR/" "$PROFILES_ROOT/$MATUGEN_TYPE/" 2>/dev/null || \
+        warn "Failed to mirror active profile into ${PROFILES_ROOT}/${MATUGEN_TYPE}"
+}
+
+# Re-fire every app reload hook after a cached profile swap (no matugen run)
+run_apply_hooks() {
+    [[ -f "$APPLY_HOOKS_SH" ]] || { warn "Apply hooks script missing; skipping app reloads."; return 0; }
+    log "Re-applying active theme to apps..."
+    bash "$APPLY_HOOKS_SH" || warn "Some app hooks reported errors."
 }
 
 apply_wallpaper_direct() {
@@ -856,6 +937,12 @@ Commands:
   refresh   Regenerate colors for current wallpaper.
   apply     Alias of refresh.
   color     <hex> Generate theme from a solid hex color (e.g., FF0000 or "#FF0000").
+  profile   [list|next|prev|<scheme-name>] Switch the active color scheme profile.
+              Every scheme type is extracted from the wallpaper on each change;
+              switching swaps instantly from cache and re-applies to all apps.
+              Scheme profiles: scheme-content, scheme-expressive, scheme-fidelity,
+              scheme-fruit-salad, scheme-monochrome, scheme-neutral, scheme-rainbow,
+              scheme-tonal-spot, scheme-vibrant
   get       Show current configuration.
 
 Examples:
@@ -865,6 +952,68 @@ Examples:
   theme_ctl random
   theme_ctl color FF0000
 EOF
+}
+
+cmd_profile() {
+    local action="${1:-list}"
+    local -i i=0 idx=-1
+
+    read_state
+
+    case "$action" in
+        list)
+            for scheme in "${ALL_SCHEMES[@]}"; do
+                if [[ "$scheme" == "$MATUGEN_TYPE" ]]; then
+                    printf ' * %s (active)\n' "$scheme"
+                else
+                    printf '   %s\n' "$scheme"
+                fi
+            done
+            return 0
+            ;;
+        next|prev)
+            for (( i = 0; i < ${#ALL_SCHEMES[@]}; i++ )); do
+                [[ "${ALL_SCHEMES[i]}" == "$MATUGEN_TYPE" ]] && { idx=$i; break; }
+            done
+            if (( idx < 0 )); then
+                idx=0
+            elif [[ "$action" == "next" ]]; then
+                idx=$(( (idx + 1) % ${#ALL_SCHEMES[@]} ))
+            else
+                idx=$(( (idx - 1 + ${#ALL_SCHEMES[@]}) % ${#ALL_SCHEMES[@]} ))
+            fi
+            action="${ALL_SCHEMES[idx]}"
+            ;;
+        *)
+            local valid=0
+            for scheme in "${ALL_SCHEMES[@]}"; do
+                [[ "$scheme" == "$action" ]] && valid=1
+            done
+            (( valid )) || die "Unknown profile '${action}'. See 'theme_ctl profile list'."
+            ;;
+    esac
+
+    if [[ "$action" == "$MATUGEN_TYPE" ]]; then
+        log "Profile already active: ${action}"
+        return 0
+    fi
+
+    MATUGEN_TYPE="$action"
+    write_state
+
+    if [[ -d "$PROFILES_ROOT/$action" ]] && [[ -n "$(find "$PROFILES_ROOT/$action" -type f 2>/dev/null | head -1)" ]]; then
+        log "Switching to cached profile: ${action}"
+        ensure_dir "$GENERATED_DIR"
+        rsync -a --delete "$PROFILES_ROOT/$action/" "$GENERATED_DIR/" || die "Failed to swap profile files"
+        run_apply_hooks
+        if command -v gsettings >/dev/null 2>&1; then
+            gsettings set org.gnome.desktop.interface color-scheme "prefer-${THEME_MODE}" 2>/dev/null || true
+        fi
+        log "Active profile is now: ${action}"
+    else
+        log "No cached profile for '${action}'. Regenerating from current wallpaper."
+        regenerate_current
+    fi
 }
 
 cmd_get() {
@@ -1097,6 +1246,11 @@ case "${1:-}" in
         hex_val="$1"
         check_deps flock pgrep matugen
         run_locked apply_solid_color "$hex_val"
+        ;;
+    profile)
+        shift
+        check_deps flock rsync find python3 matugen
+        run_locked cmd_profile "$@"
         ;;
     get)
         check_deps flock
