@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#d: Install Spotify with ad-blocking (SpotX)
+#d: Install Spotube — open-source Spotify client (no Premium, no ads)
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -13,9 +13,13 @@ readonly C_ERR=$'\033[31m'     # Red
 readonly C_WARN=$'\033[33m'    # Yellow
 
 # --- Configuration ---
-readonly SPOTX_URL="https://spotx-official.github.io/run.sh"
+readonly SPOTUBE_API="https://api.github.com/repos/KRTirtho/spotube/releases/latest"
 readonly SYS_ARCH="$(uname -m)"
-SPOTX_TMP=""
+readonly LOCAL_DIR="$HOME/.local/share/spotube"
+readonly LOCAL_BIN="$HOME/.local/bin"
+readonly LOCAL_APPS="$HOME/.local/share/applications"
+readonly LOCAL_ICONS="$HOME/.local/share/icons"
+TMP_DIR=""
 
 # --- Logging Helpers ---
 log_info()    { printf "${C_BOLD}${C_INFO}[INFO]${C_RESET} %s\n" "$1"; }
@@ -26,8 +30,8 @@ log_error()   { printf "${C_BOLD}${C_ERR}[ERROR]${C_RESET} %s\n" "$1" >&2; }
 # --- Cleanup Trap ---
 cleanup() {
     local exit_code=$?
-    if [[ -n "$SPOTX_TMP" && -f "$SPOTX_TMP" ]]; then
-        rm -f "$SPOTX_TMP"
+    if [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]]; then
+        rm -rf "$TMP_DIR"
     fi
     if [[ $exit_code -ne 0 ]]; then
         log_error "Script failed with exit code $exit_code."
@@ -63,7 +67,7 @@ install_packages() {
 
     # Local IFS override to ensure log formatting is clean (space-separated)
     log_info "Installing/Verifying packages: $(IFS=' '; echo "${packages[*]}")"
-    
+
     # --needed: Idempotency (skip if installed)
     # --noconfirm: Automated install
     if "$helper" -S --needed --noconfirm "${packages[@]}"; then
@@ -74,35 +78,65 @@ install_packages() {
     fi
 }
 
-run_spotx() {
-    log_info "Preparing SpotX installation..."
-    SPOTX_TMP=$(mktemp)
-    
-    log_info "Downloading SpotX from official source..."
-    # -s: Silent, -S: Show errors, -L: Follow redirects, -f: Fail on HTTP error
-    if curl -sSLf "$SPOTX_URL" -o "$SPOTX_TMP"; then
-        log_success "Download complete."
-    else
-        log_error "Failed to download SpotX script. Check internet connection."
+remove_old_spotify() {
+    # Clean up the old official client (x86_64) and the ARM spotifyd/ncspot fallback
+    local installed=()
+    local pkg
+    for pkg in spotify spotifyd ncspot; do
+        if pacman -Q "$pkg" &>/dev/null; then
+            installed+=("$pkg")
+        fi
+    done
+
+    if [[ ${#installed[@]} -gt 0 ]]; then
+        log_warn "Removing old Spotify packages: ${installed[*]}"
+        systemctl --user disable --now spotifyd.service 2>/dev/null || true
+        systemctl --user disable --now "spotifyd@$(hostname).service" 2>/dev/null || true
+        "$AUR_HELPER" -Rns --noconfirm "${installed[@]}" || true
+    fi
+}
+
+install_spotube_arm() {
+    # Runtime dependencies (all in the ALARM repos) — same set the AUR package declares
+    install_packages "$AUR_HELPER" mpv libappindicator-gtk3 libsecret jsoncpp libnotify \
+        xdg-user-dirs webkit2gtk-4.1
+
+    local asset_url=""
+    log_info "Fetching latest Spotube release info..."
+    asset_url="$(curl -sSLf "$SPOTUBE_API" 2>/dev/null \
+        | grep -oE '"browser_download_url":\s*"[^"]*aarch64\.tar\.xz"' \
+        | grep -oE 'https://[^"]+' | head -1 || true)"
+
+    if [[ -z "$asset_url" ]]; then
+        log_error "No aarch64 build found. Check https://github.com/KRTirtho/spotube/releases"
         exit 1
     fi
 
-    log_info "Executing SpotX..."
-    
-    # CRITICAL FIX 1: Use <(cat ...) to force "Pipe Mode" behavior.
-    # This prevents SpotX from detecting it's a file and failing 'Client Detection'.
-    #
-    # CRITICAL FIX 2: Add '-f' (Force) flag.
-    # Because we use '--needed' above, Spotify is NOT reinstalled if up-to-date.
-    # Without '-f', SpotX sees the existing patch, exits with Code 1 (Warning),
-    # and crashes our script. '-f' forces a re-run/overwrite and exits Code 0.
-    bash <(cat "$SPOTX_TMP") -f
+    TMP_DIR="$(mktemp -d)"
+    log_info "Downloading $(basename "$asset_url") ..."
+    curl -sSLf "$asset_url" -o "$TMP_DIR/spotube.tar.xz"
+
+    log_info "Extracting to $LOCAL_DIR ..."
+    mkdir -p "$LOCAL_DIR" "$LOCAL_BIN" "$LOCAL_APPS" "$LOCAL_ICONS"
+    tar -xJf "$TMP_DIR/spotube.tar.xz" -C "$LOCAL_DIR" --strip-components=1
+
+    # Launcher in ~/.local/bin
+    ln -sf "$LOCAL_DIR/spotube" "$LOCAL_BIN/spotube"
+
+    # Icon + desktop entry with corrected local paths
+    install -m644 "$LOCAL_DIR/spotube-logo.png" "$LOCAL_ICONS/spotube.png"
+    sed -e "s|Exec=.*|Exec=$LOCAL_BIN/spotube|" \
+        -e "s|Icon=.*|Icon=$LOCAL_ICONS/spotube.png|" \
+        "$LOCAL_DIR/spotube.desktop" > "$LOCAL_APPS/spotube.desktop"
+    update-desktop-database "$LOCAL_APPS" 2>/dev/null || true
+
+    log_success "Spotube installed to $LOCAL_DIR (launcher: spotube)."
 }
 
 # --- Main Logic ---
 
 # 1. User Confirmation
-printf "${C_BOLD}${C_WARN}[?]${C_RESET} Do you want to install/update Spotify? [y/N] "
+printf "${C_BOLD}${C_WARN}[?]${C_RESET} Do you want to install/update Spotube? [y/N] "
 read -r response
 
 if [[ "${response,,}" != "y" && "${response,,}" != "yes" ]]; then
@@ -112,21 +146,13 @@ fi
 
 # 2. Environment Setup
 detect_aur_helper
+remove_old_spotify
 
+# 3. Install Spotube (official client & AUR package are x86_64-only)
 if [[ "$SYS_ARCH" == "x86_64" ]]; then
-    # 3. Install Spotify + Dependencies
-    # Explicitly including 'unzip' and 'perl' as SpotX hard dependencies
-    install_packages "$AUR_HELPER" spotify unzip perl
-
-    # 4. Run SpotX
-    run_spotx
+    install_packages "$AUR_HELPER" spotube-bin
 else
-    # --- ARM fallback: official Spotify client ships x86_64 only ---
-    log_warn "Architecture '$SYS_ARCH' detected: official Spotify has no ARM build."
-    log_info "Installing spotifyd (Connect daemon) + ncspot (TUI client) from repo instead."
-    install_packages "$AUR_HELPER" spotifyd ncspot
-    log_warn "SpotX ad-block patch skipped (requires the official client)."
-    log_info "First run: start 'spotifyd', then 'ncspot' to log in and play."
+    install_spotube_arm
 fi
 
-log_success "Process finished. Spotify is ready."
+log_success "Process finished. Spotube is ready — no Spotify Premium needed."

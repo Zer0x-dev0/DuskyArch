@@ -1,15 +1,20 @@
 #!/bin/bash
 
-# Use official client if present, otherwise fall back to ncspot (ARM/aarch64)
-if command -v spotify >/dev/null; then
+# Use Spotube if present, otherwise fall back to the official client
+if command -v spotube >/dev/null; then
+	PLAYER_BIN="spotube"
+	PLAYER_CLASS="(Spotube|spotube)"
+elif command -v spotify >/dev/null; then
 	PLAYER_BIN="spotify"
 	PLAYER_CLASS="Spotify"
-elif command -v ncspot >/dev/null; then
-	PLAYER_BIN="ncspot"
-	PLAYER_CLASS="ncspot"
 else
-	echo "No Spotify client found (spotify or ncspot)." >&2
-	exit 1
+	# No local client: open the free web player (works without Spotify Premium)
+	echo "No Spotify client found (spotify or ncspot). Opening web player." >&2
+	BROWSER_BIN=$(command -v firefox || command -v chromium || command -v google-chrome-stable)
+	if [ -n "$BROWSER_BIN" ]; then
+		"$BROWSER_BIN" --new-window "https://open.spotify.com/" >/dev/null 2>&1 &
+	fi
+	exit 0
 fi
 
 # Check if player process is running
