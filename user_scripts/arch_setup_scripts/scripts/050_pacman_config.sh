@@ -109,8 +109,16 @@ TMP_FILE="$(mktemp "${TARGET_DIR}/.pacman.conf.XXXXXX")"
 
 log_info "Generating new configuration for Standard Arch Linux..."
 
+PACMAN_ARCH="auto"
+ENABLE_MULTILIB=1
+if [[ "$(uname -m)" == "aarch64" ]]; then
+    log_info "aarch64 detected - writing ALARM-compatible configuration (no multilib)."
+    PACMAN_ARCH="aarch64"
+    ENABLE_MULTILIB=0
+fi
+
 {
-    cat << 'EOF'
+    cat << EOF
 # /etc/pacman.conf
 # See the pacman.conf(5) manpage for option and repository directives
 [options]
@@ -143,7 +151,7 @@ LocalFileSigLevel = Optional
 # keyring can then be populated with the keys of all official Arch Linux
 # packagers with `pacman-key --populate archlinux`.
 
-Architecture = auto
+Architecture = ${PACMAN_ARCH}
 
 #
 # REPOSITORIES
@@ -152,8 +160,8 @@ Architecture = auto
 #   - local/custom mirrors can be added here or in separate files
 #   - repositories listed first will take precedence when packages
 #     have identical names, regardless of version number
-#   - URLs will have $repo replaced by the name of the current repo
-#   - URLs will have $arch replaced by the name of the architecture
+#   - URLs will have \$repo replaced by the name of the current repo
+#   - URLs will have \$arch replaced by the name of the architecture
 #
 # Repository entries are of the format:
 #       [repo-name]
@@ -182,9 +190,16 @@ Include = /etc/pacman.d/mirrorlist
 #[multilib-testing]
 #Include = /etc/pacman.d/mirrorlist
 
+EOF
+
+    if (( ENABLE_MULTILIB )); then
+        cat << 'EOF'
 [multilib]
 Include = /etc/pacman.d/mirrorlist
+EOF
+    fi
 
+    cat << 'EOF'
 # An example of a custom package repository.  See the pacman manpage for
 # tips on creating your own repositories.
 #[custom]

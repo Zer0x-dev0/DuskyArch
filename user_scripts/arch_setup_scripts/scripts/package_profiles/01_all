@@ -1,18 +1,14 @@
 # Default Official Arch Packages
 # Group 1: Graphics & Drivers
-intel-media-driver
-vpl-gpu-rt
 mesa
 vulkan-intel
 mesa-utils
-intel-gpu-tools
 libva
 libva-utils
 vulkan-icd-loader
 vulkan-tools
 sof-firmware
 linux-firmware
-acpi_call
 base
 base-devel
 kernel-modules-hook
@@ -198,7 +194,6 @@ curl
 openssh
 ufw
 vsftpd
-reflector
 bmon
 ethtool
 httrack
@@ -252,7 +247,6 @@ chafa
 ueberzugpp
 ccache
 mold
-shellcheck
 fd
 ripgrep
 fzf
@@ -284,7 +278,6 @@ ddcutil
 btop
 htop
 dgop
-nvtop
 inxi
 sysstat
 sysbench
@@ -292,13 +285,11 @@ logrotate
 acpid
 tlp
 tlp-rdw
-thermald
 powertop
 gdu
 iotop
 iftop
 lshw
-hwinfo
 dmidecode
 wev
 pacman-contrib

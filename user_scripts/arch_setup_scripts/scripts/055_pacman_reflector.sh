@@ -156,6 +156,14 @@ run_with_spinner() {
     return "$rc"
 }
 
+# --- ARCHITECTURE GUARD ---
+# Arch Linux ARM (aarch64) uses its own mirror network (mirror.archlinuxarm.org).
+# Reflector and the x86_64 Global CDN fallback below must never touch the ALARM mirrorlist.
+if [[ "$(uname -m)" == "aarch64" ]]; then
+    printf '%s:: ALARM (aarch64) detected - skipping mirror optimization (reflector targets x86_64 mirrors only).%s\n' "$B" "$NC"
+    exit 0
+fi
+
 # --- PRE-FLIGHT ---
 if (( EUID != 0 )); then
     if ! command -v sudo &>/dev/null; then
