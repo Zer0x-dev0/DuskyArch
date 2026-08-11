@@ -303,6 +303,10 @@ post_hook   = '''
 input_path = '~/.config/matugen/templates/dusky_sites.css'
 output_path = '~/.config/matugen/generated/dusky_sites.css'
 
+[templates.matugenfox]
+input_path  = '~/.config/matugen/templates/matugenfox-colors.css'
+output_path = '~/.config/matugen/generated/firefox_websites.css'
+
 #=============================================================================
 # 4. System Services & Daemons (Triggered on theme change )
 #=============================================================================
