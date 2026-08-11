@@ -14,11 +14,13 @@ readonly C_WARN=$'\033[33m'    # Yellow
 
 # --- Configuration ---
 readonly SPOTX_URL="https://spotx-official.github.io/run.sh"
+readonly SYS_ARCH="$(uname -m)"
 SPOTX_TMP=""
 
 # --- Logging Helpers ---
 log_info()    { printf "${C_BOLD}${C_INFO}[INFO]${C_RESET} %s\n" "$1"; }
 log_success() { printf "${C_BOLD}${C_SUCCESS}[OK]${C_RESET} %s\n" "$1"; }
+log_warn()    { printf "${C_BOLD}${C_WARN}[WARN]${C_RESET} %s\n" "$1"; }
 log_error()   { printf "${C_BOLD}${C_ERR}[ERROR]${C_RESET} %s\n" "$1" >&2; }
 
 # --- Cleanup Trap ---
@@ -111,11 +113,20 @@ fi
 # 2. Environment Setup
 detect_aur_helper
 
-# 3. Install Spotify + Dependencies
-# Explicitly including 'unzip' and 'perl' as SpotX hard dependencies
-install_packages "$AUR_HELPER" spotify unzip perl
+if [[ "$SYS_ARCH" == "x86_64" ]]; then
+    # 3. Install Spotify + Dependencies
+    # Explicitly including 'unzip' and 'perl' as SpotX hard dependencies
+    install_packages "$AUR_HELPER" spotify unzip perl
 
-# 4. Run SpotX
-run_spotx
+    # 4. Run SpotX
+    run_spotx
+else
+    # --- ARM fallback: official Spotify client ships x86_64 only ---
+    log_warn "Architecture '$SYS_ARCH' detected: official Spotify has no ARM build."
+    log_info "Installing spotifyd (Connect daemon) + ncspot (TUI client) from repo instead."
+    install_packages "$AUR_HELPER" spotifyd ncspot
+    log_warn "SpotX ad-block patch skipped (requires the official client)."
+    log_info "First run: start 'spotifyd', then 'ncspot' to log in and play."
+fi
 
 log_success "Process finished. Spotify is ready."
