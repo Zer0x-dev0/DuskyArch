@@ -9,7 +9,7 @@ elif command -v spotify >/dev/null; then
 	PLAYER_CLASS="Spotify"
 else
 	# No local client: open the free web player (works without Spotify Premium)
-	echo "No Spotify client found (spotify or ncspot). Opening web player." >&2
+	echo "No music client found (spotube or spotify). Opening web player." >&2
 	BROWSER_BIN=$(command -v firefox || command -v chromium || command -v google-chrome-stable)
 	if [ -n "$BROWSER_BIN" ]; then
 		"$BROWSER_BIN" --new-window "https://open.spotify.com/" >/dev/null 2>&1 &

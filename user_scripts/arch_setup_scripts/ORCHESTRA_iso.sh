@@ -120,7 +120,7 @@ INSTALL_SEQUENCE=(
 #    "S | 245_asusd_service_fix.sh"
 #    "S | 250_ftp_arch.sh"
 #    "U | 255_tldr_update.sh"
-#    "U | 260_spotify.sh"
+#    "U | 260_spotube.sh"
 #    "U | 265_mouse_button_reverse.sh --right"
     "U | 290_dusky_service_toggler.py --default"
 #    "S | 295_initramfs_optimization.py"

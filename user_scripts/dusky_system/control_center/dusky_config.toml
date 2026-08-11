@@ -3451,7 +3451,8 @@ icon = "system-software-install-symbolic"
 style = "suggested"
 [pages.layout.items.layout.items.on_press]
 type = "exec"
-command = "kitty --class 260_spotify.sh --hold sh -c \"$HOME/user_scripts/arch_setup_scripts/scripts/260_spotify.sh\""
+command = "kitty --class 260_spotube.sh --hold sh -c \"$HOME/user_scripts/arch_setup_scripts/scripts/260_spotube.sh\""
+terminal = false
 
 [[pages.layout]]
 type = "section"

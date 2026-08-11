@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#d: Install Spotube — open-source Spotify client (no Premium, no ads)
+#d: Install Spotube — open-source music client (no Premium, no ads)
 
 set -euo pipefail
 IFS=$'\n\t'

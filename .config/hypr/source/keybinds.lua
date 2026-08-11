@@ -382,7 +382,7 @@ hl.bind(
 -- --- Special Workspace (Spotify) ---
 hl.bind(
     "SUPER + SHIFT + M",
-    hl.dsp.exec_cmd(dusky_scripts .. "spotify/spotify_toggle.sh"),
+    hl.dsp.exec_cmd(dusky_scripts .. "spotube/spotube_toggle.sh"),
     { description = "Special Workspace for Spotify" }
 )
 
