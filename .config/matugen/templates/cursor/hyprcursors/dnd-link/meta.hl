@@ -1,0 +1,8 @@
+resize_algorithm = bilinear
+hotspot_x = 0.3906
+hotspot_y = 0.2539
+define_override = dnd-link
+define_override = alias
+define_override = dnd_link
+define_override = alias
+define_size = 64, image.svg

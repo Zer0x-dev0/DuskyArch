@@ -1,0 +1,6 @@
+resize_algorithm = bilinear
+hotspot_x = 0.8789
+hotspot_y = 0.1289
+define_override = ur_angle
+define_override = ur_angle
+define_size = 64, image.svg

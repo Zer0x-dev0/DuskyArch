@@ -1,0 +1,8 @@
+resize_algorithm = bilinear
+hotspot_x = 0.2148
+hotspot_y = 0.0664
+define_override = circle
+define_override = forbidden
+define_override = circle
+define_override = forbidden
+define_size = 64, image.svg

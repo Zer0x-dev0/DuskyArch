@@ -1,0 +1,12 @@
+resize_algorithm = bilinear
+hotspot_x = 0.5000
+hotspot_y = 0.2578
+define_override = grabbing
+define_override = closedhand
+define_override = dnd-move
+define_override = dnd-none
+define_override = grabbing
+define_override = closedhand
+define_override = dnd_move
+define_override = dnd_none
+define_size = 64, image.svg

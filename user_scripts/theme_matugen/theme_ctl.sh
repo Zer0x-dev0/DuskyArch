@@ -54,6 +54,7 @@ readonly PROFILES_ROOT="${HOME}/.config/matugen/generated_profiles"
 readonly PROFILE_CONFIGS_DIR="${HOME}/.config/matugen/profiles"
 readonly PROFILE_GEN_PY="${HOME}/user_scripts/theme_matugen/gen_profile_configs.py"
 readonly APPLY_HOOKS_SH="${PROFILE_CONFIGS_DIR}/apply_hooks.sh"
+readonly MATUGEN_CACHE_DIR="${HOME}/.cache/matugen"
 
 # Every color scheme type matugen can extract from the wallpaper
 readonly ALL_SCHEMES=(
@@ -660,35 +661,54 @@ generate_colors() {
 
     log "Matugen: Mode=[${THEME_MODE}] Type=[${MATUGEN_TYPE}] Contrast=[${MATUGEN_CONTRAST}] Index=[${SOURCE_COLOR_INDEX}] Base16=[${BASE16_BACKEND}]"
 
-    # STRICT CLAP ALIGNMENT: Binary -> Global Options -> Subcommand -> Positional Args
-    cmd=(matugen)
-    [[ "$BASE16_BACKEND" != "disable" && -n "$BASE16_BACKEND" ]] && cmd+=(--base16-backend "$BASE16_BACKEND")
-    cmd+=(--mode "$THEME_MODE")
-    [[ "$MATUGEN_TYPE" != "disable" && -n "$MATUGEN_TYPE" ]] && cmd+=(--type "$MATUGEN_TYPE")
-    [[ "$MATUGEN_CONTRAST" != "disable" && "$MATUGEN_CONTRAST" != "0" && "$MATUGEN_CONTRAST" != "0.0" && -n "$MATUGEN_CONTRAST" ]] && cmd+=(--contrast "$MATUGEN_CONTRAST")
-    cmd+=(--source-color-index "$SOURCE_COLOR_INDEX")
-    cmd+=(image "$img")
+    # Try cache first
+    if matugen_cached_run "$img" "$MATUGEN_TYPE" "image" \
+        matugen \
+        $( [[ "$BASE16_BACKEND" != "disable" && -n "$BASE16_BACKEND" ]] && echo "--base16-backend" "$BASE16_BACKEND" ) \
+        --mode "$THEME_MODE" \
+        $( [[ "$MATUGEN_TYPE" != "disable" && -n "$MATUGEN_TYPE" ]] && echo "--type" "$MATUGEN_TYPE" ) \
+        $( [[ "$MATUGEN_CONTRAST" != "disable" && "$MATUGEN_CONTRAST" != "0" && "$MATUGEN_CONTRAST" != "0.0" && -n "$MATUGEN_CONTRAST" ]] && echo "--contrast" "$MATUGEN_CONTRAST" ) \
+        --source-color-index "$SOURCE_COLOR_INDEX" \
+        image "$img"; then
+        log "Matugen: cache hit for $img"
+    else
+        # Cache miss - run normally with fallback logic
+        cmd=(matugen)
+        [[ "$BASE16_BACKEND" != "disable" && -n "$BASE16_BACKEND" ]] && cmd+=(--base16-backend "$BASE16_BACKEND")
+        cmd+=(--mode "$THEME_MODE")
+        [[ "$MATUGEN_TYPE" != "disable" && -n "$MATUGEN_TYPE" ]] && cmd+=(--type "$MATUGEN_TYPE")
+        [[ "$MATUGEN_CONTRAST" != "disable" && "$MATUGEN_CONTRAST" != "0" && "$MATUGEN_CONTRAST" != "0.0" && -n "$MATUGEN_CONTRAST" ]] && cmd+=(--contrast "$MATUGEN_CONTRAST")
+        cmd+=(--source-color-index "$SOURCE_COLOR_INDEX")
+        cmd+=(image "$img")
 
-    if ! output=$("${cmd[@]}" 99>&- 2>&1); then
-        if [[ "$output" == *"out of bounds"* ]] && [[ "$SOURCE_COLOR_INDEX" != "0" ]]; then
-            warn "Requested color index ${SOURCE_COLOR_INDEX} out of bounds for ${img##*/}. Falling back to index 0."
+        if ! output=$("${cmd[@]}" 99>&- 2>&1); then
+            if [[ "$output" == *"out of bounds"* ]] && [[ "$SOURCE_COLOR_INDEX" != "0" ]]; then
+                warn "Requested color index ${SOURCE_COLOR_INDEX} out of bounds for ${img##*/}. Falling back to index 0."
 
-            for i in "${!cmd[@]}"; do
-                if [[ "${cmd[$i]}" == "--source-color-index" ]]; then
-                    cmd[i + 1]="0"
-                    break
+                for i in "${!cmd[@]}"; do
+                    if [[ "${cmd[$i]}" == "--source-color-index" ]]; then
+                        cmd[i + 1]="0"
+                        break
+                    fi
+                done
+
+                if ! output=$("${cmd[@]}" 99>&- 2>&1); then
+                    die "Matugen generation failed on fallback: $output"
                 fi
-            done
 
-            if ! output=$("${cmd[@]}" 99>&- 2>&1); then
-                die "Matugen generation failed on fallback: $output"
+                SOURCE_COLOR_INDEX="0"
+                write_state
+            else
+                die "Matugen generation failed: $output"
             fi
-
-            SOURCE_COLOR_INDEX="0"
-            write_state
-        else
-            die "Matugen generation failed: $output"
         fi
+
+        # Cache the result
+        mkdir -p "${MATUGEN_CACHE_DIR}"
+        local key
+        key=$(matugen_cache_key "$img")
+        cp "${GENERATED_DIR}/colors.css" "${MATUGEN_CACHE_DIR}/${key}" 2>/dev/null
+        printf '%s' "$img" > "${MATUGEN_CACHE_DIR}/${key}.meta"
     fi
 
     if command -v gsettings >/dev/null 2>&1; then
@@ -708,16 +728,34 @@ apply_solid_color() {
 
     log "Matugen Solid Color: Hex=[${hex}] Mode=[${THEME_MODE}] Type=[${MATUGEN_TYPE}] Contrast=[${MATUGEN_CONTRAST}] Base16=[${BASE16_BACKEND}]"
 
-    # STRICT CLAP ALIGNMENT: Binary -> Global Options -> Subcommand -> Sub-arguments
-    cmd=(matugen)
-    [[ "$BASE16_BACKEND" != "disable" && -n "$BASE16_BACKEND" ]] && cmd+=(--base16-backend "$BASE16_BACKEND")
-    cmd+=(--mode "$THEME_MODE")
-    [[ "$MATUGEN_TYPE" != "disable" && -n "$MATUGEN_TYPE" ]] && cmd+=(--type "$MATUGEN_TYPE")
-    [[ "$MATUGEN_CONTRAST" != "disable" && "$MATUGEN_CONTRAST" != "0" && "$MATUGEN_CONTRAST" != "0.0" && -n "$MATUGEN_CONTRAST" ]] && cmd+=(--contrast "$MATUGEN_CONTRAST")
-    cmd+=(color hex "$hex")
+    # Try cache first
+    if matugen_cached_run "$hex" "$MATUGEN_TYPE" "color" \
+        matugen \
+        $( [[ "$BASE16_BACKEND" != "disable" && -n "$BASE16_BACKEND" ]] && echo "--base16-backend" "$BASE16_BACKEND" ) \
+        --mode "$THEME_MODE" \
+        $( [[ "$MATUGEN_TYPE" != "disable" && -n "$MATUGEN_TYPE" ]] && echo "--type" "$MATUGEN_TYPE" ) \
+        $( [[ "$MATUGEN_CONTRAST" != "disable" && "$MATUGEN_CONTRAST" != "0" && "$MATUGEN_CONTRAST" != "0.0" && -n "$MATUGEN_CONTRAST" ]] && echo "--contrast" "$MATUGEN_CONTRAST" ) \
+        color hex "$hex"; then
+        log "Matugen: cache hit for solid color $hex"
+    else
+        # Cache miss - run normally
+        cmd=(matugen)
+        [[ "$BASE16_BACKEND" != "disable" && -n "$BASE16_BACKEND" ]] && cmd+=(--base16-backend "$BASE16_BACKEND")
+        cmd+=(--mode "$THEME_MODE")
+        [[ "$MATUGEN_TYPE" != "disable" && -n "$MATUGEN_TYPE" ]] && cmd+=(--type "$MATUGEN_TYPE")
+        [[ "$MATUGEN_CONTRAST" != "disable" && "$MATUGEN_CONTRAST" != "0" && "$MATUGEN_CONTRAST" != "0.0" && -n "$MATUGEN_CONTRAST" ]] && cmd+=(--contrast "$MATUGEN_CONTRAST")
+        cmd+=(color hex "$hex")
 
-    if ! output=$("${cmd[@]}" 99>&- 2>&1); then
-        die "Matugen color generation failed: $output"
+        if ! output=$("${cmd[@]}" 99>&- 2>&1); then
+            die "Matugen color generation failed: $output"
+        fi
+
+        # Cache the result
+        mkdir -p "${MATUGEN_CACHE_DIR}"
+        local key
+        key=$(matugen_cache_key "$hex" "$MATUGEN_TYPE" "color")
+        cp "${GENERATED_DIR}/colors.css" "${MATUGEN_CACHE_DIR}/${key}" 2>/dev/null
+        printf '%s' "$hex" > "${MATUGEN_CACHE_DIR}/${key}.meta"
     fi
 
     if command -v gsettings >/dev/null 2>&1; then
@@ -725,6 +763,63 @@ apply_solid_color() {
     fi
 
     sweep_profiles color "$hex"
+}
+
+# Matugen output cache: avoids re-running matugen for same (wallpaper, scheme, settings)
+matugen_cache_key() {
+    local img="$1"
+    local scheme="${2:-$MATUGEN_TYPE}"
+    local mode="${3:-image}"
+    local key="${img}|${scheme}|${mode}|${THEME_MODE}|${MATUGEN_CONTRAST}|${SOURCE_COLOR_INDEX}|${BASE16_BACKEND}"
+    printf '%s' "$key" | sha256sum | cut -d' ' -f1
+}
+
+matugen_cached_run() {
+    local img="$1"
+    local scheme="${2:-$MATUGEN_TYPE}"
+    local mode="${3:-image}"
+    local -a cmd=("${@:4}")
+
+    local key
+    key=$(matugen_cache_key "$img" "$scheme" "$mode")
+    local cache_file="${MATUGEN_CACHE_DIR}/${key}"
+    local lock_file="${cache_file}.lock"
+
+    mkdir -p "${MATUGEN_CACHE_DIR}"
+
+    # Fast path: cache hit
+    if [[ -f "${cache_file}" && -f "${cache_file}.meta" ]]; then
+        local cached_img
+        cached_img=$(<"${cache_file}.meta")
+        if [[ "$cached_img" == "$1" ]]; then
+            ln -sf "${cache_file}" "${GENERATED_DIR}/colors.css" 2>/dev/null || true
+            return 0
+        fi
+    fi
+
+    # Miss: run matugen with lock to prevent duplicate runs
+    exec 9>"${lock_file}"
+    flock -x -w 10 9 || { warn "Matugen cache lock timeout"; return 1; }
+
+    # Double-check after lock
+    if [[ -f "${cache_file}" && -f "${cache_file}.meta" ]]; then
+        local cached_img
+        cached_img=$(<"${cache_file}.meta")
+        if [[ "$cached_img" == "$1" ]]; then
+            ln -sf "${cache_file}" "${GENERATED_DIR}/colors.css" 2>/dev/null || true
+            return 0
+        fi
+    fi
+
+    # Run matugen
+    if output=$("${cmd[@]}" 99>&- 2>&1); then
+        # Cache the generated colors.css
+        cp "${GENERATED_DIR}/colors.css" "${cache_file}" 2>/dev/null
+        printf '%s' "$1" > "${cache_file}.meta"
+        return 0
+    else
+        return 1
+    fi
 }
 
 build_matugen_base() {
@@ -741,9 +836,8 @@ ensure_profile_configs() {
     python3 "$PROFILE_GEN_PY" >/dev/null 2>&1
 }
 
-# Generate every color scheme profile (all ALL_SCHEMES) from the same source
-# into generated_profiles/<scheme>/ with post_hooks suppressed. Only the active
-# scheme is rendered by the caller with the main config, so apps reload once.
+# Lazy profile sweep: only generates active + recently used schemes (max 3).
+# Other schemes are generated on-demand when switched to.
 sweep_profiles() {
     local mode="$1"
     local source="$2"
@@ -754,9 +848,14 @@ sweep_profiles() {
 
     ensure_profile_configs || { warn "Profile sweep skipped (config helper unavailable)."; return 0; }
 
+    # Get only active + recent schemes to generate (max 3)
+    local -a active_schemes
+    mapfile -t active_schemes < <(python3 "$PROFILE_GEN_PY" --get-active "$MATUGEN_TYPE" 2>/dev/null || printf '%s\n' "$MATUGEN_TYPE")
+    [[ ${#active_schemes[@]} -eq 0 ]] && active_schemes=("$MATUGEN_TYPE")
+
     build_matugen_base base
 
-    for scheme in "${ALL_SCHEMES[@]}"; do
+    for scheme in "${active_schemes[@]}"; do
         [[ "$scheme" == "$MATUGEN_TYPE" ]] && continue
         {
             if [[ "$mode" == "image" ]]; then
@@ -775,6 +874,9 @@ sweep_profiles() {
     ensure_dir "$PROFILES_ROOT/$MATUGEN_TYPE"
     rsync -a --delete "$GENERATED_DIR/" "$PROFILES_ROOT/$MATUGEN_TYPE/" 2>/dev/null || \
         warn "Failed to mirror active profile into ${PROFILES_ROOT}/${MATUGEN_TYPE}"
+
+    # Mark current scheme as recent for future sweeps
+    python3 "$PROFILE_GEN_PY" --mark-recent "$MATUGEN_TYPE" >/dev/null 2>&1 || true
 }
 
 # Re-fire every app reload hook after a cached profile swap (no matugen run)
@@ -1210,6 +1312,11 @@ run_locked() {
 }
 
 # --- MAIN ---
+
+# Prevent main from running when sourced
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    return 0
+fi
 
 case "${1:-}" in
     set)

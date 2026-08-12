@@ -1,0 +1,8 @@
+resize_algorithm = bilinear
+hotspot_x = 0.5000
+hotspot_y = 0.1289
+define_override = sb_up_arrow
+define_override = up-arrow
+define_override = sb_up_arrow
+define_override = up_arrow
+define_size = 64, image.svg

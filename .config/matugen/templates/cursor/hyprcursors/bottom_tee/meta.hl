@@ -1,0 +1,6 @@
+resize_algorithm = bilinear
+hotspot_x = 0.5000
+hotspot_y = 0.8984
+define_override = bottom_tee
+define_override = bottom_tee
+define_size = 64, image.svg

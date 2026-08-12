@@ -1,0 +1,8 @@
+resize_algorithm = bilinear
+hotspot_x = 0.5000
+hotspot_y = 0.5000
+define_override = tcross
+define_override = color-picker
+define_override = tcross
+define_override = color_picker
+define_size = 64, image.svg

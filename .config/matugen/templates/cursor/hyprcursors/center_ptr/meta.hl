@@ -1,0 +1,6 @@
+resize_algorithm = bilinear
+hotspot_x = 0.4961
+hotspot_y = 0.0664
+define_override = center_ptr
+define_override = center_ptr
+define_size = 64, image.svg

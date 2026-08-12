@@ -1,0 +1,8 @@
+resize_algorithm = bilinear
+hotspot_x = 0.5000
+hotspot_y = 0.5000
+define_override = crossed_circle
+define_override = not-allowed
+define_override = crossed_circle
+define_override = not_allowed
+define_size = 64, image.svg

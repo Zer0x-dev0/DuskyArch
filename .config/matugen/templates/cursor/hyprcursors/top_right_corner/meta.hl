@@ -1,0 +1,8 @@
+resize_algorithm = bilinear
+hotspot_x = 0.8945
+hotspot_y = 0.0938
+define_override = top_right_corner
+define_override = ne-resize
+define_override = top_right_corner
+define_override = ne_resize
+define_size = 64, image.svg

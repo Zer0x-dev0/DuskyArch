@@ -87,6 +87,10 @@ post_hook   = '''
 input_path  = '~/.config/matugen/templates/colors.css'
 output_path = '~/.config/matugen/generated/wlogout-colors.css'
 
+[templates.colors_css]
+input_path  = '~/.config/matugen/templates/colors.css'
+output_path = '~/.config/matugen/generated/colors.css'
+
 [templates.mako]
 input_path  = '~/.config/matugen/templates/mako.ini'
 output_path = '~/.config/matugen/generated/mako-colors.ini'
@@ -333,6 +337,23 @@ output_path = '/dev/null'
 post_hook   = '''
   systemctl --user reset-failed hyprpolkitagent || :
   systemctl --user restart hyprpolkitagent || :
+'''
+
+
+[templates.hyprcursor]
+input_path  = '/dev/null'
+output_path = '/dev/null'
+post_hook   = '''
+  CURSOR_PRIMARY="{{colors.primary.default.hex}}" \
+  CURSOR_OUTLINE="{{colors.outline.default.hex}}" \
+  CURSOR_ERROR="{{colors.error.default.hex}}" \
+  CURSOR_TERTIARY="{{colors.tertiary.default.hex}}" \
+  CURSOR_SECONDARY="{{colors.secondary.default.hex}}" \
+  CURSOR_SECONDARY_CONTAINER="{{colors.secondary_container.default.hex}}" \
+  CURSOR_ON_SURFACE="{{colors.on_surface.default.hex}}" \
+  CURSOR_ON_SURFACE_VARIANT="{{colors.on_surface_variant.default.hex}}" \
+  CURSOR_ON_PRIMARY_CONTAINER="{{colors.on_primary_container.default.hex}}" \
+  bash "$HOME/user_scripts/theme_matugen/cursor_recolor.sh" || :
 '''
 
 

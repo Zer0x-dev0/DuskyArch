@@ -1,0 +1,8 @@
+resize_algorithm = bilinear
+hotspot_x = 0.3906
+hotspot_y = 0.2539
+define_override = dnd_no_drop
+define_override = no-drop
+define_override = dnd_no_drop
+define_override = no_drop
+define_size = 64, image.svg

@@ -1,0 +1,6 @@
+resize_algorithm = bilinear
+hotspot_x = 0.3906
+hotspot_y = 0.2539
+define_override = dnd-copy
+define_override = dnd_copy
+define_size = 64, image.svg

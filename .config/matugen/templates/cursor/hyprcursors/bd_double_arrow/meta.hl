@@ -1,0 +1,10 @@
+resize_algorithm = bilinear
+hotspot_x = 0.5000
+hotspot_y = 0.5000
+define_override = bd_double_arrow
+define_override = nwse-resize
+define_override = size_fdiag
+define_override = bd_double_arrow
+define_override = nwse_resize
+define_override = size_fdiag
+define_size = 64, image.svg

@@ -1,0 +1,8 @@
+resize_algorithm = bilinear
+hotspot_x = 0.1797
+hotspot_y = 0.8242
+define_override = pencil
+define_override = draft
+define_override = pencil
+define_override = draft
+define_size = 64, image.svg

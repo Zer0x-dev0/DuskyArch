@@ -1,0 +1,6 @@
+resize_algorithm = bilinear
+hotspot_x = 0.5000
+hotspot_y = 0.5000
+define_override = wayland-cursor
+define_override = wayland_cursor
+define_size = 64, image.svg

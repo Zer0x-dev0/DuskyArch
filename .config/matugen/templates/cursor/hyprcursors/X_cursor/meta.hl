@@ -1,0 +1,10 @@
+resize_algorithm = bilinear
+hotspot_x = 0.5000
+hotspot_y = 0.5000
+define_override = X_cursor
+define_override = pirate
+define_override = x-cursor
+define_override = X_cursor
+define_override = pirate
+define_override = x_cursor
+define_size = 64, image.svg

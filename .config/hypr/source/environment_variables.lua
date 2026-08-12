@@ -79,7 +79,7 @@ hl_env("MOZ_ENABLE_WAYLAND", "1")
 hl_env("GTK_USE_PORTAL", "1") -- use xdg-desktop-portal file picker on Hyprland
 
 -- 7. Appearance / cursor
-hl_env("XCURSOR_THEME", "Bibata-Modern-Classic")
+hl_env("XCURSOR_THEME", "Matugen-Cursor")
 hl_env("XCURSOR_SIZE", "18")
 hl_env("HYPRCURSOR_SIZE", "18")
 

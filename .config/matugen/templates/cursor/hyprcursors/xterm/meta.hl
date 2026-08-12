@@ -1,0 +1,10 @@
+resize_algorithm = bilinear
+hotspot_x = 0.5000
+hotspot_y = 0.5000
+define_override = xterm
+define_override = ibeam
+define_override = text
+define_override = xterm
+define_override = ibeam
+define_override = text
+define_size = 64, image.svg

@@ -1,0 +1,8 @@
+resize_algorithm = bilinear
+hotspot_x = 0.5000
+hotspot_y = 0.5000
+define_override = plus
+define_override = cell
+define_override = plus
+define_override = cell
+define_size = 64, image.svg
