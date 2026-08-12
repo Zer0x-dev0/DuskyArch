@@ -153,6 +153,13 @@ read_battery_aggregated() {
 }
 do_suspend() {
     log "Attempting suspend (ignore inhibitors for critical)"
+    if systemd-detect-virt --vm >/dev/null 2>&1; then
+        # VM-safe suspend: lock + display off (real S3 freezes virtio/virgl GPU on resume)
+        loginctl lock-session
+        sleep 1
+        hyprctl dispatch dpms off
+        return 0
+    fi
     if busctl --system call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager SuspendWithFlags "t" 1 2>&1; then return 0; fi
     if busctl --system call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager Suspend "b" false 2>&1; then return 0; fi
     if command -v systemctl >/dev/null; then systemctl suspend --no-block 2>&1 && return 0; systemctl suspend 2>&1 && return 0; fi

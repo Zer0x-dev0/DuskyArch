@@ -26,7 +26,7 @@ readonly SCRIPT_NAME="${0##*/}"
 readonly SIG_DIM="brightnessctl -s set"
 readonly SIG_LOCK="loginctl lock-session"
 readonly SIG_OFF="dispatch dpms off"
-readonly SIG_SUSPEND="systemctl suspend"
+readonly SIG_SUSPEND="dusky_suspend.sh"
 
 # ANSI Colors (using ANSI-C quoting)
 readonly C_RED=$'\033[1;31m'

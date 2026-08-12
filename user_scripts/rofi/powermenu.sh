@@ -103,7 +103,7 @@ execute() {
             ;;
         suspend)
             sleep "${ACTION_DELAY}"
-            exec systemctl suspend
+            exec "$HOME/user_scripts/power/dusky_suspend.sh"
             ;;
         reboot)
             sleep "${ACTION_DELAY}"

@@ -12,7 +12,7 @@
 }
 {
     "label": "suspend",
-    "action": "systemctl suspend",
+    "action": "$HOME/user_scripts/power/dusky_suspend.sh",
     "text": "Suspend",
     "keybind": "u"
 }
