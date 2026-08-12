@@ -79,7 +79,7 @@ jq -c -n \
     # 2. Calculate true pending count in a single filtered pass using extracted flat arrays
     | (($active | extract_notifs) + ($history | extract_notifs)) 
     | unique_by(.id) 
-    | map(select(.summary != null and .summary != ""))
+    | map(select(.summary != null and .summary != "" and .summary != "󰎟 Notifications"))
     
     # Apply the ignore and blacklist filters securely in one pass
     | map(select((.app_name | is_ignored | not) and ($blacklist_dict[.id | tostring] | not)))

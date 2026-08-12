@@ -111,8 +111,9 @@ MENU_PAYLOAD=$(jq -r -n \
   | "\(.id)\t\(.desktop_entry // .app_name // "" | gsub("\t";" "))\t\(.__source)\t<b>\(clean_app)\(.summary | gsub("<[^>]+>"; "") | escape_pango)</b>\(clean_time($times))\(clean_body)\u001e"
 ')
 
+# Exit early, don't pollute mako history with a visible notification
 if [[ -z "$MENU_PAYLOAD" ]]; then
-    notify-send -t 1500 "󰎟 Notifications" "No notifications in buffer."
+    notify-send -a "OSD" -t 1500 "󰎟 Notifications" "No notifications in buffer."
     exit 0
 fi
 
@@ -136,13 +137,13 @@ SELECTED_INDEX=$(echo -n "$MENU_STRING" | rofi -dmenu -i -p "󰎟 Notifications"
     -markup-rows \
     -sep '\x1e' \
     -format 'i' \
-    -eh 2 \
+    -eh 4 \
     -kb-custom-2 "Alt+y" \
     -kb-custom-3 "Alt+t" \
     -hover-select \
     -me-select-entry '' \
     -me-accept-entry 'MousePrimary' \
-    -theme-str 'window {width: 45%;} listview {lines: 6; fixed-height: false;} element {padding: 10px 14px;} element-text {vertical-align: 0.5;}')
+    -theme-str 'window {width: 72%;} listview {lines: 10; fixed-height: false;} element {padding: 18px 22px;} element-text {vertical-align: 0.5; font: "JetBrainsMono Nerd Font 13";} element-icon {size: 1.5em;}')
 
 ROFI_EXIT=$?
 
