@@ -148,7 +148,6 @@ configure the following files to set your environment variables.
 
 ## 💿 Installation
 
-[Watch Video Tutorial](https://youtu.be/OzeFAY_8T8Y)
 
 **Best for:** Users who already have a fresh, unconfigured **Arch Linux ARM (aarch64)**
 installation with Hyprland. On Apple Silicon VMs (UTM/VMware/QEMU), install Arch Linux
