@@ -40,13 +40,13 @@ def icon_for(dsp):
 
 def format_mods(mask):
     out = []
-    if mask & 1:   out.append("SHIFT")
-    if mask & 2:   out.append("CAPS")
+    if mask & 64:  out.append("SUPER")
     if mask & 4:   out.append("CTRL")
     if mask & 8:   out.append("ALT")
+    if mask & 1:   out.append("SHIFT")
+    if mask & 2:   out.append("CAPS")
     if mask & 16:  out.append("MOD2")
     if mask & 32:  out.append("MOD3")
-    if mask & 64:  out.append("SUPER")
     if mask & 128: out.append("MOD5")
     return " ".join(out)
 
@@ -96,10 +96,16 @@ for line in sys.stdin:
     try: modmask = int(modmask_s)
     except Exception: modmask = 0
     
-    if not key.startswith("mouse:") and keycode > 0 and str(keycode) in keymap:
-        key = keymap[str(keycode)]
-    elif not key and keycode > 0:
-        key = f"code:{keycode}"
+    if not key.startswith("mouse:"):
+        if keycode > 0:
+            # Hyprland keycodes are Linux evdev codes; xkb keycodes are evdev + 8
+            mapped = keymap.get(str(keycode + 8)) or keymap.get(str(keycode))
+            if mapped:
+                key = mapped
+            elif not key:
+                key = f"code:{keycode}"
+        elif not key:
+            key = f"code:{keycode}"
         
     bind_obj = {
         "submap": submap,
@@ -123,7 +129,7 @@ categories = [
 
 for title, color, items in categories:
     if not items: continue
-    header_display = f"<b><span foreground=\"{color}\">---  {esc(title)}  ---</span></b>"
+    header_display = f'<b><span foreground="{color}">---  {esc(title)} <span alpha="65%">({len(items)})</span>  ---</span></b>'
     print(f"{header_display}{delim}header{delim}header{delim}header{delim}header{delim}header")
     
     items.sort(key=lambda x: (get_mod_priority(x["modmask"]), x["key"], x["description"]))
