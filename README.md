@@ -2,7 +2,7 @@
 
 # 🐧 DuskyArch — aarch64 Edition
 
-**A labor of love: 8+ months of tinkering, breaking, fixing, and polishing — ported to ARM.**
+**A labor of love: Tinkering, breaking, fixing, and polishing — ported to ARM.**
 Designed to feel as easy to install as a "standard" distribution, but with the raw power
 and minimalism of Arch.
 
