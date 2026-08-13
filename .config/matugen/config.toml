@@ -129,6 +129,7 @@ output_path = '~/.config/matugen/generated/foot-colors.ini'
 post_hook   = '''
   ln -nfs "$HOME/.config/matugen/generated/foot-colors.ini" "$HOME/.config/foot/foot-colors.ini"
   touch "$HOME/.config/foot/foot.ini" || :
+  pkill -SIGUSR1 -x foot || :
 '''
 
 [templates.khal]

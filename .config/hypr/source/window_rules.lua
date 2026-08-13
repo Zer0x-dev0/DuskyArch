@@ -546,6 +546,8 @@ hl.window_rule({
   name = "foot_blur",
   match = { class = "^(foot)$" },
   no_blur = false,
+  opacity = "1.0 override 1.0 override",
+  no_dim = true,
 })
 
 --- Dusky glance_mako_tui.sh ---
