@@ -10,12 +10,80 @@ while handling `hl.exec_cmd(...)` autostart directives inside `hl.on("hyprland.s
 
 import os
 import re
+import shutil
 import stat
+import subprocess
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from python.engines.lua import HyprlandLuaEngine
+
+# =============================================================================
+# RUNTIME ACTIONS: live start/stop for "apply now" without relogin.
+#   start / stop  -> shell commands executed via the user's shell
+#   pcheck        -> pgrep pattern used to report whether the service is running
+# Entries without a runtime definition (one-shot, transient, or toggle-only
+# scripts) are intentionally omitted.
+# =============================================================================
+AUTOSTART_RUNTIME: dict[str, dict[str, str]] = {
+    "awww_daemon": {
+        "pcheck": "awww-daemon",
+        "exact": True,
+        "start": "awww-daemon",
+        "stop": "pkill -x awww-daemon",
+    },
+    "waybar": {
+        "pcheck": "waybar",
+        "exact": True,
+        "start": "$HOME/user_scripts/waybar/waybar_toggle.sh --on",
+        "stop": "$HOME/user_scripts/waybar/waybar_toggle.sh --off",
+    },
+    "nm_applet": {
+        "pcheck": "nm-applet",
+        "exact": True,
+        "start": "nm-applet",
+        "stop": "pkill -x nm-applet",
+    },
+    "gnome_keyring": {
+        "pcheck": "gnome-keyring",
+        "start": "/usr/bin/gnome-keyring-daemon --start --components=secrets",
+        "stop": "pkill -f gnome-keyring-daemon",
+    },
+    "hypridle": {
+        "pcheck": "hypridle",
+        "exact": True,
+        "start": "systemctl --user start hypridle.service",
+        "stop": "systemctl --user stop hypridle.service",
+    },
+    "clip_persist": {
+        "pcheck": "wl-clip-persist",
+        "exact": True,
+        "start": "wl-clip-persist --clipboard regular",
+        "stop": "pkill -x wl-clip-persist",
+    },
+    "wayclick": {
+        "pcheck": "dusky_wayclick",
+        "start": "$HOME/user_scripts/wayclick/dusky_wayclick.sh",
+        "stop": "pkill -TERM -u $USER -f dusky_wayclick.sh",
+    },
+    "xhost_root": {
+        "pcheck": "xhost",
+        "exact": True,
+        "start": "xhost +si:localuser:root",
+        "stop": "",
+    },
+    "hyprpm_reload": {
+        "pcheck": "hyprpm",
+        "exact": True,
+        "start": "hyprpm reload",
+        "stop": "",
+    },
+}
+
+# Backup retention: keep the N most recent snapshots per config file.
+BACKUP_KEEP = 15
 
 AUTOSTART_DEFAULTS: dict[str, dict[str, Any]] = {
     # --- Interface & Background Services ---
@@ -25,8 +93,8 @@ AUTOSTART_DEFAULTS: dict[str, dict[str, Any]] = {
         "default": True
     },
     "autostart/waybar": {
-        "pattern": r'(?:waybar_toggle\.sh|\bwaybar\b)',
-        "canonical": 'hl.exec_cmd("$HOME/user_scripts/waybar/waybar_toggle.sh")',
+        "pattern": r'(?:waybar_toggle\.sh|exec_cmd\("waybar"\))',
+        "canonical": 'hl.exec_cmd("$HOME/user_scripts/waybar/waybar_toggle.sh --on")',
         "default": True
     },
     "autostart/waybar_timer": {
@@ -240,11 +308,6 @@ AUTOSTART_DEFAULTS: dict[str, dict[str, Any]] = {
         "canonical": 'hl.exec_cmd("~/user_scripts/rofi/dusky_glance.sh --disk-temp nvme0n1")',
         "default": False
     },
-    "autostart/glance_zram": {
-        "pattern": r'dusky_glance\.sh\s+--zram',
-        "canonical": 'hl.exec_cmd("~/user_scripts/rofi/dusky_glance.sh --zram")',
-        "default": False
-    },
     "autostart/glance_stopwatch": {
         "pattern": r'dusky_glance\.sh\s+--stopwatch',
         "canonical": 'hl.exec_cmd("~/user_scripts/rofi/dusky_glance.sh --stopwatch")',
@@ -329,7 +392,187 @@ class AutostartLuaEngine(HyprlandLuaEngine):
 
         return state
 
+    # =========================================================================
+    # SAFETY NET: timestamped backups + Lua syntax validation
+    # =========================================================================
+    def create_backup(self) -> Path | None:
+        """Snapshot the current config before mutation. Mirrors the main.py backup
+        convention (timestamped .bak + .latest.bak symlink) under ~/Documents/dusky_backups/autostart/."""
+        if not self.config_path.exists():
+            return None
+
+        backup_dir = Path("~/Documents/dusky_backups/autostart/").expanduser()
+        try:
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            backup_dir.chmod(0o700)
+        except OSError:
+            return None
+
+        stem = re.sub(r"[^\w.-]+", "_", self.config_path.stem)[:64]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")
+        backup_path = backup_dir / f"{stem}.{timestamp}.bak"
+        latest_link = backup_dir / f"{stem}.latest.bak"
+
+        try:
+            orig_mode = stat.S_IMODE(self.config_path.stat().st_mode)
+            tmp_fd, tmp_name = tempfile.mkstemp(dir=str(backup_dir), prefix=f".{stem}.", suffix=".tmp")
+            tmp_path = Path(tmp_name)
+            with os.fdopen(tmp_fd, "wb") as out_f, self.config_path.open("rb") as in_f:
+                shutil.copyfileobj(in_f, out_f, length=1024 * 1024)
+                out_f.flush()
+                os.fsync(out_f.fileno())
+            tmp_path.chmod(orig_mode)
+            os.replace(tmp_path, backup_path)
+
+            tmp_link = backup_dir / f".{stem}.latest.bak.tmp-{os.getpid()}"
+            if tmp_link.exists() or tmp_link.is_symlink():
+                tmp_link.unlink()
+            tmp_link.symlink_to(backup_path.resolve())
+            os.replace(tmp_link, latest_link)
+
+            self._prune_backups(backup_dir, stem)
+            return backup_path
+        except OSError:
+            return None
+
+    def _prune_backups(self, backup_dir: Path, stem: str) -> None:
+        try:
+            candidates = sorted(
+                (p for p in backup_dir.glob(f"{stem}.*.bak") if p.is_file()),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            for stale in candidates[BACKUP_KEEP:]:
+                stale.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def restore_backup(self) -> bool:
+        """Restore the config from the latest snapshot. Returns False if none exists."""
+        backup_dir = Path("~/Documents/dusky_backups/autostart/").expanduser()
+        stem = re.sub(r"[^\w.-]+", "_", self.config_path.stem)[:64]
+        latest_link = backup_dir / f"{stem}.latest.bak"
+        if not latest_link.exists():
+            return False
+        try:
+            actual = latest_link.resolve(strict=True)
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(actual, self.config_path)
+            try:
+                self.config_path.chmod(stat.S_IMODE(actual.stat().st_mode))
+            except OSError:
+                pass
+            return True
+        except OSError:
+            return False
+
+    def _validate_lua(self, file_path: Path) -> tuple[bool, str]:
+        """Syntax-only validation via the system Lua interpreter (loadfile never executes)."""
+        try:
+            res = subprocess.run(
+                [self.lua_bin, "-e", f"assert(loadfile({__import__('json').dumps(str(file_path))}))"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=5.0,
+            )
+            if res.returncode == 0:
+                return True, ""
+            return False, (res.stderr or res.stdout or "unknown Lua error").strip()
+        except (OSError, subprocess.SubprocessError, RuntimeError):
+            return False, "Lua interpreter unavailable."
+
+    # =========================================================================
+    # RUNTIME CONTROL: apply config changes live without relogin
+    # =========================================================================
+    def runtime_status(self, key: str) -> str:
+        """Return 'running', 'stopped' or 'unknown' for a service key."""
+        rt = AUTOSTART_RUNTIME.get(key)
+        if not rt or not rt["pcheck"]:
+            return "unknown"
+        try:
+            pgrep_args = ["pgrep", "-x" if rt.get("exact") else "-f", rt["pcheck"]]
+            res = subprocess.run(
+                pgrep_args,
+                capture_output=True,
+                text=True,
+                timeout=3.0,
+            )
+            if res.returncode != 0 or not res.stdout.strip():
+                return "stopped"
+            # Exclude our own process and the TUI host: pgrep -f can match
+            # the caller's own command line (e.g. tests embedding the name).
+            excluded = {str(os.getpid()), str(os.getppid())}
+            pids = [p for p in res.stdout.split() if p not in excluded]
+            return "running" if pids else "stopped"
+        except (OSError, subprocess.SubprocessError):
+            return "unknown"
+
+    def apply_runtime(self, key: str, enabled: bool) -> tuple[bool, str]:
+        """Start or stop a service immediately, matching the toggled config state."""
+        rt = AUTOSTART_RUNTIME.get(key)
+        if not rt:
+            return False, f"No live runtime action defined for '{key}'."
+
+        command = rt["start"] if enabled else rt["stop"]
+        if not command:
+            return False, (
+                f"'{key}' has no {'start' if enabled else 'stop'} action (one-shot command)."
+            )
+
+        if enabled and self.runtime_status(key) == "running":
+            return True, f"'{key}' is already running."
+
+        if enabled:
+            # Daemons never exit: launch detached and only treat a fast,
+            # non-zero exit as a failure.
+            try:
+                proc = subprocess.Popen(
+                    ["/bin/sh", "-c", command],
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except (OSError, subprocess.SubprocessError) as e:
+                return False, f"Failed to start '{key}': {e}"
+            try:
+                rc = proc.wait(timeout=1.5)
+            except subprocess.TimeoutExpired:
+                rc = None
+            if rc is not None and rc != 0:
+                return False, f"Failed to start '{key}' (exit code {rc})."
+        else:
+            # Already stopped -> nothing to do (pkill exits 1 on no match,
+            # systemctl would also report a spurious failure).
+            if self.runtime_status(key) == "stopped":
+                return True, f"'{key}' is already stopped."
+            try:
+                subprocess.run(
+                    ["/bin/sh", "-c", command],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=15.0,
+                )
+            except subprocess.CalledProcessError as e:
+                # The process may have vanished between the status check and
+                # the stop command (pkill no-match, systemd already-inactive).
+                if self.runtime_status(key) == "stopped":
+                    return True, f"'{key}' is already stopped."
+                detail = (e.stderr or e.stdout or "").strip()
+                return False, f"Failed to stop '{key}': {detail}"
+            except (OSError, subprocess.SubprocessError) as e:
+                return False, f"Failed to stop '{key}': {e}"
+
+        status = self.runtime_status(key)
+        if enabled and not rt["stop"]:
+            return True, f"'{key}' executed (one-shot command)."
+        return True, f"'{key}' {'started' if enabled else 'stopped'} | status: {status}"
+
     def write_batch(self, changes: list[tuple[str, str, str, str]]) -> tuple[bool, str, str]:
+        if not changes:
+            return True, "No pending changes.", ""
+
         standard_changes = []
         autostart_changes = []
 
@@ -344,6 +587,12 @@ class AutostartLuaEngine(HyprlandLuaEngine):
         msg = ""
         debug = ""
 
+        backup_path = None
+        if changes:
+            backup_path = self.create_backup()
+
+        input_valid, input_err = self._validate_lua(self.config_path) if self.config_path.exists() else (True, "")
+
         if standard_changes:
             success, msg, debug = super().write_batch(standard_changes)
 
@@ -355,7 +604,10 @@ class AutostartLuaEngine(HyprlandLuaEngine):
                 content = self.config_path.read_text(encoding="utf-8") if self.config_path.exists() else ""
                 lines = content.splitlines() if content else []
 
-                has_start_block = any("hyprland.start" in l for l in lines)
+                has_start_block = any(
+                    "hyprland.start" in l and not _is_header_comment(lines, idx) and not l.strip().startswith("--")
+                    for idx, l in enumerate(lines)
+                )
 
                 for key, scope, val_str, _ in autostart_changes:
                     full_key = f"{scope}/{key}" if scope and scope != "DEFAULT" else f"autostart/{key}"
@@ -389,15 +641,45 @@ class AutostartLuaEngine(HyprlandLuaEngine):
                                 indent = raw_line[:len(raw_line) - len(raw_line.lstrip())]
                                 uncommented = re.sub(r'^\s*--+\s*', '', raw_line)
                                 lines[matched_idx] = indent + uncommented
+
+                                # If the enclosing hl.on(...) block is commented, activate it
+                                # as well, otherwise the uncommented entry would never run.
+                                block_open = -1
+                                for j in range(matched_idx - 1, -1, -1):
+                                    s = lines[j].strip()
+                                    if s.startswith("--") and "hl.on(" in s:
+                                        block_open = j
+                                        break
+                                    if "hl.on(" in s:
+                                        break
+                                if block_open != -1:
+                                    raw = lines[block_open]
+                                    ind = raw[:len(raw) - len(raw.lstrip())]
+                                    lines[block_open] = ind + re.sub(r'^\s*--+\s*', '', raw)
+                                    for j in range(matched_idx + 1, len(lines)):
+                                        s = lines[j].strip()
+                                        if s.startswith("--") and s.lstrip("--").strip().startswith("end)"):
+                                            raw = lines[j]
+                                            ind = raw[:len(raw) - len(raw.lstrip())]
+                                            lines[j] = ind + re.sub(r'^\s*--+\s*', '', raw)
+                                            break
                         else:
                             insert_line = f"    {canonical}"
                             block_end_idx = -1
                             block_start_idx = -1
 
                             for i, l in enumerate(lines):
-                                if "hyprland.start" in l and not _is_header_comment(lines, i):
+                                if (
+                                    "hyprland.start" in l
+                                    and not _is_header_comment(lines, i)
+                                    and not l.strip().startswith("--")
+                                ):
                                     block_start_idx = i
-                                elif block_start_idx != -1 and l.strip().startswith("end)"):
+                                elif (
+                                    block_start_idx != -1
+                                    and not l.strip().startswith("--")
+                                    and l.strip().startswith("end)")
+                                ):
                                     block_end_idx = i
                                     break
 
@@ -432,6 +714,14 @@ class AutostartLuaEngine(HyprlandLuaEngine):
                     except OSError:
                         pass
 
+                # Post-write safety net: reject syntactically invalid output
+                # before it can ever replace the live config. If the input file
+                # was already broken, allow the toggle through (pre-existing error).
+                valid, err = self._validate_lua(tmp_path)
+                if not valid and input_valid:
+                    tmp_path.unlink(missing_ok=True)
+                    return False, f"Lua validation failed; config left unchanged: {err}", debug
+
                 tmp_path.replace(self.config_path)
 
                 if hasattr(self, "file_mtimes"):
@@ -441,5 +731,16 @@ class AutostartLuaEngine(HyprlandLuaEngine):
 
             except Exception as e:
                 return False, f"Autostart Engine failed to write changes: {e}", debug
+
+        # Final belt-and-braces validation of the merged result. If a standard
+        # (AST) write produced broken Lua, roll back to the pre-write snapshot.
+        valid, err = self._validate_lua(self.config_path)
+        if not valid:
+            if not input_valid:
+                msg += " [warn: file already had a Lua syntax error before this change]"
+            else:
+                restored = self.restore_backup()
+                note = f" (restored backup {backup_path.name})" if restored and backup_path else ""
+                return False, f"Lua validation failed after write{note}: {err}", debug
 
         return True, msg, debug

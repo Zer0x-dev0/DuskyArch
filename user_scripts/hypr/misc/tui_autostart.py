@@ -33,7 +33,7 @@ TAB_NOTICES = {
     1: {
         "level": "info",
         "position": "bottom",
-        "message": "\uf05a **Note:** Changes require restart/relogin to take effect."
+        "message": "\uf05a **Note:** Changes require restart/relogin to take effect. Press `a` on a highlighted entry to apply it immediately."
     },
     2: [
         {
@@ -44,7 +44,7 @@ TAB_NOTICES = {
         {
             "level": "info",
             "position": "bottom",
-            "message": "\uf05a **Note:** Changes require restart/relogin to take effect."
+            "message": "\uf05a **Note:** Changes require restart/relogin to take effect. Press `a` on a highlighted entry to apply it immediately."
         }
     ]
 }

@@ -34,13 +34,14 @@ hl.on("hyprland.start", function()
 
     -- --- BACKGROUND SERVICES ---
     hl.exec_cmd("awww-daemon")           -- Wallpaper engine
+    -- hl.exec_cmd("hypridle") -- Idle manager (sleep/lock on inactivity)
     -- hl.exec_cmd("$HOME/user_scripts/wayclick/dusky_wayclick.sh") -- Wayclick
 
-    -- ---Background wallpaper audio Visvualizer
+    -- ---Background wallpaper audio Visualizer
     -- hl.exec_cmd("$HOME/user_scripts/way_layers/visualizer/visualizer_toggle.sh") -- Audio Visualizer
 
     -- --- OPTIONAL / USER INTERFACE ---
-    hl.exec_cmd("$HOME/user_scripts/waybar/waybar_toggle.sh")
+    hl.exec_cmd("$HOME/user_scripts/waybar/waybar_toggle.sh --on") -- --on starts waybar idempotently (safe at login)
     -- hl.exec_cmd("$HOME/user_scripts/waybar/toggle_timer_waybar.sh")
     -- hl.exec_cmd("nm-applet")
 

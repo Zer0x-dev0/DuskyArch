@@ -1065,6 +1065,7 @@ class ShortcutsInfoScreen(ModalScreen[None]):
             ("alt+1..7", "Jump directly to tab N"),
             ("d", "Show pending or modified items (Diff)"),
             ("u", "Undo last change (or batch change)"),
+            ("a", "Apply highlighted autostart entry now (no relogin)"),
             ("ctrl+r", "Redo last undone change"),
             ("ctrl+t", "Toggle between Auto and Batch save modes"),
             ("ctrl+s", "Commit all pending changes (only available in Batch mode)"),
@@ -1879,6 +1880,7 @@ Tooltip {
 
         Binding("d", "show_diff", "Diff", priority=False),
         Binding("D", "delete_user_preset", "Delete Preset", priority=False),
+        Binding("a", "apply_now", "Apply Now", priority=False),
         Binding("u", "undo", "Undo", priority=False),
         Binding("ctrl+r", "redo", "Redo", priority=True),
         Binding("r", "reset_item", "Reset Item", priority=False),
@@ -5147,6 +5149,44 @@ Tooltip {
                 was_already_selected=True,
                 button=1
             )
+
+    # =========================================================================
+    # APPLY NOW: live start/stop without relogin
+    # =========================================================================
+    def action_apply_now(self) -> None:
+        """Runs the highlighted autostart entry's runtime start/stop immediately."""
+        ol = self.current_option_list
+        if not ol or not ol.last_highlighted_id:
+            return
+
+        parsed = self._get_item_from_id(ol.last_highlighted_id)
+        if not parsed:
+            return
+
+        _, _, item = parsed
+
+        if item.type_ != "bool":
+            self.notify_status("Apply Now only works on boolean toggles.", level="warning")
+            return
+
+        try:
+            engine = self._get_engine_for_item(item)
+        except KeyError as e:
+            self.notify_status(str(e), level="warning")
+            return
+
+        if not hasattr(engine, "apply_runtime"):
+            self.notify_status("This engine does not support live apply.", level="warning")
+            return
+
+        enabled = bool(item.value)
+        try:
+            ok, msg = engine.apply_runtime(item.key, enabled)
+        except Exception as e:
+            ok, msg = False, str(e)
+
+        self.notify_status(msg, level="success" if ok else "warning")
+        self.play_reset_sound()
 
     @on(OptionList.OptionSelected)
     def handle_selection(self, event: OptionList.OptionSelected) -> None:
