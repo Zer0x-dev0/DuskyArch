@@ -13,8 +13,25 @@
 input_path  = '~/.config/matugen/templates/gtk-colors.css'
 output_path = '~/.config/matugen/generated/gtk-3.css'
 post_hook   = '''
-  ln -nfs "$HOME/.config/matugen/generated/gtk-3.css" "$HOME/.config/gtk-3.0/gtk.css"
-  gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3" || :
+  # Live-reloadable THEME: adw-gtk3 base + matugen overrides on top.
+  # This is the single source of truth for GTK3 colors: gsettings toggles
+  # re-read the theme css live (proven), while the user css (~/.config/
+  # gtk-3.0/gtk.css) is only read at startup and would mask the theme
+  # (priority 800 vs 400), so it must NOT be created.
+  rm -f "$HOME/.config/gtk-3.0/gtk.css"
+
+  # The name is versioned by the source color so running GTK3 apps always get
+  # a fresh, uncached theme on toggle.
+  NAME="adw-gtk3-matugen-$(sed -n '1s/^#//p' "$HOME/.config/matugen/generated/papirus")"
+  mkdir -p "$HOME/.local/share/themes/$NAME/gtk-3.0"
+  [[ -f "$HOME/.local/share/themes/$NAME/index.theme" ]] || \
+    cp /usr/share/themes/adw-gtk3/index.theme "$HOME/.local/share/themes/$NAME/"
+  cat /usr/share/themes/adw-gtk3/gtk-3.0/gtk.css \
+      "$HOME/.config/matugen/generated/gtk-3.css" \
+      > "$HOME/.local/share/themes/$NAME/gtk-3.0/gtk.css"
+  find "$HOME/.local/share/themes" -maxdepth 1 -type d \
+       -name 'adw-gtk3-matugen-*' ! -name "$NAME" \
+       -exec rm -rf {} + 2>/dev/null || :
 '''
 
 [templates.gtk4]
@@ -33,12 +50,12 @@ post_hook   = '''
   gsettings set org.gnome.desktop.interface icon-theme "Papirus" || :
 '''
 
-# [templates.papirus_icon_theme]
-# input_path  = '~/.config/matugen/templates/papirus'
-# output_path = '~/.config/matugen/generated/papirus'
-# post_hook   = '''
-#   "$HOME/user_scripts/gtk/papirus_folder_colors.sh" || :
-# '''
+[templates.papirus_icon_theme]
+input_path  = '~/.config/matugen/templates/papirus'
+output_path = '~/.config/matugen/generated/papirus'
+post_hook   = '''
+  "$HOME/user_scripts/gtk/papirus_folder_colors.sh" || :
+'''
 
 [templates.qt5ct]
 input_path  = '~/.config/matugen/templates/qtct-colors.conf'
@@ -372,6 +389,15 @@ post_hook   = '''
   # Examples:
   # echo "Matugen ran successfully" > /tmp/matugen_status.txt
   # bash $HOME/scripts/some_other_theme_script.sh
+
+  # Force running GTK apps to re-read the freshly generated CSS and icons
+  # without a restart. Same value twice is a no-op, so the gtk-theme name is
+  # versioned by the source color and icons bounce through a real installed
+  # theme ('Adwaita') to invalidate the process-local caches.
+  NAME="adw-gtk3-matugen-$(sed -n '1s/^#//p' "$HOME/.config/matugen/generated/papirus")"
+  gsettings set org.gnome.desktop.interface gtk-theme "$NAME" 2>/dev/null || :
+  gsettings set org.gnome.desktop.interface icon-theme 'Adwaita' 2>/dev/null || :
+  gsettings set org.gnome.desktop.interface icon-theme 'Papirus' 2>/dev/null || :
 '''
 
 [templates.theme_notify]
