@@ -4,11 +4,14 @@ import type {
   DashboardProvider,
   NuclearPlugin,
   NuclearPluginAPI,
+  Playlist,
+  PlaylistProvider,
   PlaylistRef,
   Track,
 } from '@nuclearplayer/plugin-sdk';
 
-const PROVIDER_ID = 'jiosaavn-dashboard';
+const DASHBOARD_PROVIDER_ID = 'jiosaavn-dashboard';
+const PLAYLISTS_PROVIDER_ID = 'jiosaavn-playlists';
 const API_BASE = 'https://www.jiosaavn.com/api.php';
 const PREFERRED_LANGUAGES = ['malayalam', 'tamil', 'hindi', 'english', 'telugu'];
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -55,17 +58,17 @@ const toAlbumRef = (album: any): AlbumRef => ({
   title: album.title ?? 'Unknown',
   artists: artistNames(album.primary_artists ?? album.artists?.[0]?.name).map((name) => ({
     name,
-    source: { provider: PROVIDER_ID, id: name },
+    source: { provider: DASHBOARD_PROVIDER_ID, id: name },
   })),
   artwork: artwork(album.image),
-  source: { provider: PROVIDER_ID, id: String(album.albumid ?? album.id ?? ''), url: album.perma_url },
+  source: { provider: DASHBOARD_PROVIDER_ID, id: String(album.albumid ?? album.id ?? ''), url: album.perma_url },
 });
 
 const toPlaylistRef = (playlist: any): PlaylistRef => ({
   id: String(playlist.listid ?? playlist.id ?? ''),
   name: playlist.listname ?? playlist.title ?? 'Unknown',
   artwork: artwork(playlist.image),
-  source: { provider: PROVIDER_ID, id: String(playlist.listid ?? playlist.id ?? ''), url: playlist.perma_url },
+  source: { provider: DASHBOARD_PROVIDER_ID, id: String(playlist.listid ?? playlist.id ?? ''), url: playlist.perma_url },
 });
 
 const toTrack = (song: any): Track => ({
@@ -73,11 +76,19 @@ const toTrack = (song: any): Track => ({
   artists: artistNames(song.primary_artists ?? song.singers ?? 'Unknown Artist').map((name) => ({ name, roles: [] })),
   durationMs: parseInt(song.duration ?? '0', 10) * 1000 || undefined,
   artwork: artwork(song.image, 'thumbnail'),
-  source: { provider: PROVIDER_ID, id: String(song.id), url: song.perma_url },
+  source: { provider: DASHBOARD_PROVIDER_ID, id: String(song.id), url: song.perma_url },
 });
 
-const createProvider = (api: NuclearPluginAPI): DashboardProvider => {
+type LanguageData = {
+  language: string;
+  playlist: any;
+  tracks: any[];
+  albums: any[];
+};
+
+const createDashboardProvider = (api: NuclearPluginAPI): DashboardProvider => {
   let trendingCache: { fetchedAt: number; items: any[] } | undefined;
+  let languageCache: { fetchedAt: number; data: LanguageData[] } | undefined;
 
   const getTrending = async (): Promise<any[]> => {
     const now = Date.now();
@@ -89,8 +100,58 @@ const createProvider = (api: NuclearPluginAPI): DashboardProvider => {
     return trendingCache.items;
   };
 
+  const getLanguageData = async (): Promise<LanguageData[]> => {
+    const now = Date.now();
+    if (languageCache && now - languageCache.fetchedAt < CACHE_TTL_MS) {
+      return languageCache.data;
+    }
+
+    const playlists = await Promise.all(
+      PREFERRED_LANGUAGES.map(async (language) => {
+        const data = await callApi(api, { __call: 'search.getPlaylistResults', q: `${language} top hits`, n: '3' });
+        return (data.results ?? []).find((pl: any) => (pl.language ?? '').toLowerCase() === language);
+      }),
+    );
+
+    const albums = await Promise.all(
+      PREFERRED_LANGUAGES.map(async (language) => {
+        const data = await callApi(api, { __call: 'search.getAlbumResults', q: `${language} songs`, n: '5' });
+        return (data.results ?? []).filter((al: any) => (al.language ?? '').toLowerCase() === language);
+      }),
+    );
+
+    const tracksPerLanguage = await Promise.all(
+      playlists.map(async (playlist) => {
+        if (!playlist) {
+          return [];
+        }
+        try {
+          const data = await callApi(api, {
+            __call: 'playlist.getDetails',
+            listid: String(playlist.listid),
+            n: '20',
+          });
+          return (data.songs ?? []).filter(
+            (song: any) => !song.language || (song.language ?? '').toLowerCase() === (playlist.language ?? '').toLowerCase(),
+          );
+        } catch {
+          return [];
+        }
+      }),
+    );
+
+    const data = PREFERRED_LANGUAGES.map((language, index) => ({
+      language,
+      playlist: playlists[index],
+      tracks: tracksPerLanguage[index],
+      albums: albums[index],
+    }));
+    languageCache = { fetchedAt: now, data };
+    return data;
+  };
+
   return {
-    id: PROVIDER_ID,
+    id: DASHBOARD_PROVIDER_ID,
     kind: 'dashboard',
     name: 'JioSaavn',
     capabilities: [
@@ -101,25 +162,10 @@ const createProvider = (api: NuclearPluginAPI): DashboardProvider => {
     ],
 
     async fetchTopTracks() {
-      const items = await getTrending();
-      const songs = items.filter((item: any) => item.type === 'song').map((item: any) => item.details);
-
-      const playlist = items.find((item: any) => item.type === 'playlist');
-      if (playlist) {
-        try {
-          const data = await callApi(api, {
-            __call: 'playlist.getDetails',
-            listid: String(playlist.details.listid),
-            n: '15',
-          });
-          songs.push(...(data.songs ?? []));
-        } catch {
-          // playlist enrichment is best-effort
-        }
-      }
-
+      const languageData = await getLanguageData();
       const seen = new Set<string>();
-      return songs
+      const songs = languageData
+        .flatMap((entry) => entry.tracks)
         .filter((song: any) => {
           const id = String(song.id);
           if (seen.has(id)) {
@@ -129,27 +175,46 @@ const createProvider = (api: NuclearPluginAPI): DashboardProvider => {
           return true;
         })
         .sort(byLanguagePreference)
-        .slice(0, 25)
-        .map(toTrack);
+        .slice(0, 30);
+      return songs.map(toTrack);
     },
 
     async fetchTopAlbums() {
-      const items = await getTrending();
-      return items
-        .filter((item: any) => item.type === 'album')
-        .map((item: any) => item.details)
+      const languageData = await getLanguageData();
+      const trending = await getTrending();
+      const seen = new Set<string>();
+      return [...languageData.flatMap((entry) => entry.albums), ...trending.filter((item: any) => item.type === 'album').map((item: any) => item.details)]
+        .filter((album: any) => {
+          const id = String(album.albumid ?? album.id);
+          if (seen.has(id)) {
+            return false;
+          }
+          seen.add(id);
+          return true;
+        })
         .sort(byLanguagePreference)
         .map(toAlbumRef);
     },
 
     async fetchEditorialPlaylists() {
-      const items = await getTrending();
-      return items.filter((item: any) => item.type === 'playlist').map((item: any) => toPlaylistRef(item.details));
+      const languageData = await getLanguageData();
+      const trending = await getTrending();
+      const seen = new Set<string>();
+      return [...languageData.map((entry) => entry.playlist).filter(Boolean), ...trending.filter((item: any) => item.type === 'playlist').map((item: any) => item.details)]
+        .filter((playlist: any) => {
+          const id = String(playlist.listid);
+          if (seen.has(id)) {
+            return false;
+          }
+          seen.add(id);
+          return true;
+        })
+        .map(toPlaylistRef);
     },
 
     async fetchNewReleases() {
-      const items = await getTrending();
-      return items
+      const trending = await getTrending();
+      return trending
         .filter((item: any) => item.type === 'album')
         .map((item: any) => item.details)
         .sort(byLanguagePreference)
@@ -158,13 +223,45 @@ const createProvider = (api: NuclearPluginAPI): DashboardProvider => {
   };
 };
 
+const createPlaylistsProvider = (api: NuclearPluginAPI): PlaylistProvider => ({
+  id: PLAYLISTS_PROVIDER_ID,
+  kind: 'playlists',
+  name: 'JioSaavn',
+
+  matchesUrl: (url: string) => /jiosaavn\.com\//i.test(url),
+
+  fetchPlaylistByUrl: async (url) => {
+    const token = url.split('/').filter(Boolean).pop() ?? '';
+    const data = await callApi(api, { __call: 'webapi.get', type: 'playlist', token });
+    const songs = data?.songs ?? [];
+    const now = new Date().toISOString();
+    const playlist: Playlist = {
+      id: String(data?.listid ?? token),
+      name: data?.listname ?? 'JioSaavn Playlist',
+      artwork: artwork(data?.image),
+      createdAtIso: now,
+      lastModifiedIso: now,
+      origin: { provider: PLAYLISTS_PROVIDER_ID, id: String(data?.listid ?? token), url },
+      isReadOnly: true,
+      items: songs.map((song: any, index: number) => ({
+        id: `${song.id}-${index}`,
+        track: toTrack(song),
+        addedAtIso: now,
+      })),
+    };
+    return playlist;
+  },
+});
+
 const plugin: NuclearPlugin = {
   onEnable(api: NuclearPluginAPI) {
-    api.Providers.register(createProvider(api));
+    api.Providers.register(createDashboardProvider(api));
+    api.Providers.register(createPlaylistsProvider(api));
   },
 
   onDisable(api: NuclearPluginAPI) {
-    api.Providers.unregister(PROVIDER_ID);
+    api.Providers.unregister(DASHBOARD_PROVIDER_ID);
+    api.Providers.unregister(PLAYLISTS_PROVIDER_ID);
   },
 };
 
