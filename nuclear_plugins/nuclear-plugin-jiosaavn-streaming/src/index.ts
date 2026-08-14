@@ -1,13 +1,18 @@
-import type { StreamingProvider, NuclearPlugin } from '@nuclearplayer/plugin-sdk';
+import type {
+  NuclearPlugin,
+  NuclearPluginAPI,
+  StreamingProvider,
+  YtdlpSearchResult,
+} from '@nuclearplayer/plugin-sdk';
 
 const PROVIDER_ID = 'jiosaavn-streaming';
 
-const buildQuotedQuery = (query: string): string => {
-  const escaped = query.replace(/"/g, '\\"');
-  return `"${escaped}"`;
+const buildQuotedQuery = (artist: string, title: string): string => {
+  const safeTitle = title.replace(/"/g, '');
+  return `${artist} "${safeTitle}"`;
 };
 
-const dedupeById = (results: any[]): any[] => {
+const dedupeById = (results: YtdlpSearchResult[]): YtdlpSearchResult[] => {
   const seen = new Set<string>();
   return results.filter((result) => {
     if (seen.has(result.id)) {
@@ -18,39 +23,69 @@ const dedupeById = (results: any[]): any[] => {
   });
 };
 
-const createProvider = (api: any): StreamingProvider => ({
+const valueOrEmpty = (
+  outcome: PromiseSettledResult<YtdlpSearchResult[]>,
+): YtdlpSearchResult[] => {
+  if (outcome.status === 'fulfilled') {
+    return outcome.value;
+  }
+  return [];
+};
+
+const createProvider = (api: NuclearPluginAPI): StreamingProvider => ({
   id: PROVIDER_ID,
+  kind: 'streaming',
   name: 'JioSaavn',
   description: 'JioSaavn streaming provider for Nuclear',
-  searchForTrack: async ({ artist, name, album, year }) => {
-    const quotedQuery = buildQuotedQuery([artist, name].filter(Boolean).join(' '));
-    const plainQuery = [artist, name, album, year].filter(Boolean).join(' ');
 
-    const [quotedResults, plainResults] = await Promise.all([
-      api.Ytdlp.search(quotedQuery, 10),
-      api.Ytdlp.search(plainQuery, 10),
+  searchForTrack: async (artist, title) => {
+    const [quotedOutcome, plainOutcome] = await Promise.allSettled([
+      api.Ytdlp.search(buildQuotedQuery(artist, title)),
+      api.Ytdlp.search(`${artist} ${title}`),
     ]);
 
-    const results = dedupeById([...quotedResults, ...plainResults]);
+    if (
+      quotedOutcome.status === 'rejected' &&
+      plainOutcome.status === 'rejected'
+    ) {
+      throw quotedOutcome.reason;
+    }
+
+    const results = dedupeById([
+      ...valueOrEmpty(quotedOutcome),
+      ...valueOrEmpty(plainOutcome),
+    ]);
 
     return results.map((result) => ({
       id: result.id,
       title: result.title,
-      thumbnail: result.thumbnail,
-      artist: result.artist,
-      duration: result.duration,
+      durationMs: result.duration ? result.duration * 1000 : undefined,
+      thumbnail: result.thumbnail ?? undefined,
+      failed: false,
+      source: { provider: PROVIDER_ID, id: result.id },
     }));
   },
-  getStreamUrl: async (track) => {
-    return api.Ytdlp.getStream(track.id, track.title);
+
+  getStreamUrl: async (candidateId) => {
+    const info = await api.Ytdlp.getStream(candidateId);
+
+    return {
+      url: info.stream_url,
+      protocol: 'https',
+      durationMs: info.duration ? info.duration * 1000 : undefined,
+      container: info.container ?? undefined,
+      codec: info.codec ?? undefined,
+      source: { provider: PROVIDER_ID, id: candidateId },
+    };
   },
 });
 
 const plugin: NuclearPlugin = {
-  onEnable: (api) => {
+  onEnable(api: NuclearPluginAPI) {
     api.Providers.register(createProvider(api));
   },
-  onDisable: (api) => {
+
+  onDisable(api: NuclearPluginAPI) {
     api.Providers.unregister(PROVIDER_ID);
   },
 };

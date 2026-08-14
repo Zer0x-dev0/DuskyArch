@@ -4,8 +4,10 @@ const PROVIDER_ID = 'jiosaavn-metadata';
 
 const createProvider = (): MetadataProvider => ({
   id: PROVIDER_ID,
+  kind: 'metadata',
   name: 'JioSaavn',
   description: 'JioSaavn metadata provider for Nuclear',
+  streamingProviderId: 'jiosaavn-streaming',
   searchCapabilities: ['artists', 'albums', 'tracks', 'playlists'],
   artistMetadataCapabilities: ['artistBio', 'artistAlbums', 'artistTopTracks'],
   albumMetadataCapabilities: ['albumDetails'],
@@ -21,10 +23,10 @@ const createProvider = (): MetadataProvider => ({
 });
 
 const plugin: NuclearPlugin = {
-  onEnable: (api) => {
+  onEnable(api) {
     api.Providers.register(createProvider());
   },
-  onDisable: (api) => {
+  onDisable(api) {
     api.Providers.unregister(PROVIDER_ID);
   },
 };
