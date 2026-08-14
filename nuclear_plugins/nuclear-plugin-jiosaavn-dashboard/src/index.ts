@@ -106,10 +106,13 @@ const createDashboardProvider = (api: NuclearPluginAPI): DashboardProvider => {
       return languageCache.data;
     }
 
+    const isDecadePlaylist = (name: string): boolean => /(?:19|20)\d0s/i.test(name);
+
     const playlists = await Promise.all(
       PREFERRED_LANGUAGES.map(async (language) => {
-        const data = await callApi(api, { __call: 'search.getPlaylistResults', q: `${language} top hits`, n: '3' });
-        return (data.results ?? []).find((pl: any) => (pl.language ?? '').toLowerCase() === language);
+        const data = await callApi(api, { __call: 'search.getPlaylistResults', q: `${language} top 50`, n: '6' });
+        const candidates = (data.results ?? []).filter((pl: any) => (pl.language ?? '').toLowerCase() === language);
+        return candidates.find((pl: any) => !isDecadePlaylist(pl.listname ?? '')) ?? candidates[0];
       }),
     );
 
