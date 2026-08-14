@@ -93,7 +93,7 @@ star on his repository:
 | Pacman | `Architecture = auto`, multilib enabled | `Architecture = aarch64`, no multilib (multilib is x86-only) |
 | Mirrors | `reflector` optimization | Skipped (uses official Arch Linux ARM mirrors) |
 | Packages | Intel/AMD-only packages included | 9 x86_64-only packages removed: `intel-media-driver`, `vpl-gpu-rt`, `intel-gpu-tools`, `acpi_call`, `reflector`, `thermald`, `hwinfo`, `nvtop`, `shellcheck` |
-| Spotify | Official Spotify client + SpotX ad-block | Official client and `spotube-bin` ship x86_64-only → **Spotube** installed from official **aarch64** builds (no Premium needed, ad-free) |
+| Spotify | Official Spotify client + SpotX ad-block | **Nuclear** installed via Flatpak (cross-arch, no Premium needed, ad-free) |
 | Hyprland rendering | Standard GPU paths | `debug:damage_tracking = 0` — fixes half-rendered/cut tiled windows on virgl (common on virtio/ARM GPUs) |
 | Suspend | `systemctl suspend` everywhere | VM-safe suspend (`user_scripts/power/dusky_suspend.sh`): real S3 on bare metal, lock + display-off inside VMs — S3 resume freezes the virtio/virgl GPU (frozen lock screen, dead input, must power-cycle) |
 | GPU detection | Intel/NVIDIA/AMD scripts | Auto-detects ARM GPUs (virtio, V3D, mali, etc.), skips x86-only GPU scripts |
@@ -199,7 +199,7 @@ python3 ~/user_scripts/arch_setup_scripts/orchestrator.py --profile 01_main
 
 > [!NOTE]
 >
-> This fork's aarch64 patches (pacman, packages, spotify/spotube, etc.) live inside the
+> This fork's aarch64 patches (pacman, packages, nuclear, etc.) live inside the
 > scripts, so the orchestra applies them automatically. If you re-run it, keep the git
 > self-update from wiping local state: add `--no-git-update` to the command above.
 
