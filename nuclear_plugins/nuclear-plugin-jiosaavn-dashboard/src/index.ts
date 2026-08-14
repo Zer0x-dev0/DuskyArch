@@ -10,6 +10,8 @@ import type {
 
 const PROVIDER_ID = 'jiosaavn-dashboard';
 const API_BASE = 'https://www.jiosaavn.com/api.php';
+const PREFERRED_LANGUAGES = ['malayalam', 'tamil', 'hindi', 'english', 'telugu'];
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
 const callApi = async (
   api: NuclearPluginAPI,
@@ -38,6 +40,17 @@ const artwork = (url: string | undefined, purpose: 'cover' | 'thumbnail' | 'avat
 const artistNames = (raw: string | undefined): string[] =>
   (raw ?? '').split(/,| featuring /i).map((n) => n.trim()).filter(Boolean);
 
+const languageRank = (lang: string | undefined): number => {
+  if (!lang) {
+    return PREFERRED_LANGUAGES.length;
+  }
+  const idx = PREFERRED_LANGUAGES.indexOf(lang.toLowerCase());
+  return idx === -1 ? PREFERRED_LANGUAGES.length : idx;
+};
+
+const byLanguagePreference = <T extends { language?: string }>(a: T, b: T): number =>
+  languageRank(a.language) - languageRank(b.language);
+
 const toAlbumRef = (album: any): AlbumRef => ({
   title: album.title ?? 'Unknown',
   artists: artistNames(album.primary_artists ?? album.artists?.[0]?.name).map((name) => ({
@@ -63,37 +76,87 @@ const toTrack = (song: any): Track => ({
   source: { provider: PROVIDER_ID, id: String(song.id), url: song.perma_url },
 });
 
-const createProvider = (api: NuclearPluginAPI): DashboardProvider => ({
-  id: PROVIDER_ID,
-  kind: 'dashboard',
-  name: 'JioSaavn',
-  capabilities: [
-    'topTracks',
-    'topAlbums',
-    'editorialPlaylists',
-    'newReleases',
-  ],
+const createProvider = (api: NuclearPluginAPI): DashboardProvider => {
+  let trendingCache: { fetchedAt: number; items: any[] } | undefined;
 
-  async fetchTopTracks() {
-    const data = await callApi(api, { __call: 'content.getTrending', lang: 'hindi', n: '40' });
-    return (data ?? []).filter((item: any) => item.type === 'song').map((item: any) => toTrack(item.details));
-  },
+  const getTrending = async (): Promise<any[]> => {
+    const now = Date.now();
+    if (trendingCache && now - trendingCache.fetchedAt < CACHE_TTL_MS) {
+      return trendingCache.items;
+    }
+    const data = await callApi(api, { __call: 'content.getTrending', n: '60' });
+    trendingCache = { fetchedAt: now, items: data ?? [] };
+    return trendingCache.items;
+  };
 
-  async fetchTopAlbums() {
-    const data = await callApi(api, { __call: 'content.getTrending', lang: 'hindi', n: '40' });
-    return (data ?? []).filter((item: any) => item.type === 'album').map((item: any) => toAlbumRef(item.details));
-  },
+  return {
+    id: PROVIDER_ID,
+    kind: 'dashboard',
+    name: 'JioSaavn',
+    capabilities: [
+      'topTracks',
+      'topAlbums',
+      'editorialPlaylists',
+      'newReleases',
+    ],
 
-  async fetchEditorialPlaylists() {
-    const data = await callApi(api, { __call: 'content.getTrending', lang: 'hindi', n: '40' });
-    return (data ?? []).filter((item: any) => item.type === 'playlist').map((item: any) => toPlaylistRef(item.details));
-  },
+    async fetchTopTracks() {
+      const items = await getTrending();
+      const songs = items.filter((item: any) => item.type === 'song').map((item: any) => item.details);
 
-  async fetchNewReleases() {
-    const data = await callApi(api, { __call: 'content.getTrending', lang: 'hindi', n: '40' });
-    return (data ?? []).filter((item: any) => item.type === 'album').map((item: any) => toAlbumRef(item.details));
-  },
-});
+      const playlist = items.find((item: any) => item.type === 'playlist');
+      if (playlist) {
+        try {
+          const data = await callApi(api, {
+            __call: 'playlist.getDetails',
+            listid: String(playlist.details.listid),
+            n: '15',
+          });
+          songs.push(...(data.songs ?? []));
+        } catch {
+          // playlist enrichment is best-effort
+        }
+      }
+
+      const seen = new Set<string>();
+      return songs
+        .filter((song: any) => {
+          const id = String(song.id);
+          if (seen.has(id)) {
+            return false;
+          }
+          seen.add(id);
+          return true;
+        })
+        .sort(byLanguagePreference)
+        .slice(0, 25)
+        .map(toTrack);
+    },
+
+    async fetchTopAlbums() {
+      const items = await getTrending();
+      return items
+        .filter((item: any) => item.type === 'album')
+        .map((item: any) => item.details)
+        .sort(byLanguagePreference)
+        .map(toAlbumRef);
+    },
+
+    async fetchEditorialPlaylists() {
+      const items = await getTrending();
+      return items.filter((item: any) => item.type === 'playlist').map((item: any) => toPlaylistRef(item.details));
+    },
+
+    async fetchNewReleases() {
+      const items = await getTrending();
+      return items
+        .filter((item: any) => item.type === 'album')
+        .map((item: any) => item.details)
+        .sort(byLanguagePreference)
+        .map(toAlbumRef);
+    },
+  };
+};
 
 const plugin: NuclearPlugin = {
   onEnable(api: NuclearPluginAPI) {
