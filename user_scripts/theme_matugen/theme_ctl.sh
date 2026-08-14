@@ -48,6 +48,11 @@ readonly ACTIVE_THEME_DIR="${WALLPAPER_ROOT}/active_theme"
 readonly LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/theme_ctl.lock"
 readonly FLOCK_TIMEOUT_SEC=30
 
+# Touched by the last matugen hook right before the app-reload cascade
+# fires; the deferred wallpaper transition waits for it so the fade is
+# mid-animation while every open app repaints (masks the "shake").
+readonly FADE_GREENLIGHT="${XDG_RUNTIME_DIR:-/tmp}/dusky-fade-go"
+
 # --- Multi-Profile Configuration ---
 readonly GENERATED_DIR="${HOME}/.config/matugen/generated"
 readonly PROFILES_ROOT="${HOME}/.config/matugen/generated_profiles"
@@ -661,8 +666,11 @@ generate_colors() {
 
     log "Matugen: Mode=[${THEME_MODE}] Type=[${MATUGEN_TYPE}] Contrast=[${MATUGEN_CONTRAST}] Index=[${SOURCE_COLOR_INDEX}] Base16=[${BASE16_BACKEND}]"
 
-    # Try cache first
-    if matugen_cached_run "$img" "$MATUGEN_TYPE" "image" \
+    # Try cache first (only when allowed: refresh of the current wallpaper is
+    # the only safe hit, since a hit restores colors.css only while the other
+    # rendered templates would stay stale from the previous wallpaper)
+    if [[ "${ALLOW_MATUGEN_CACHE:-0}" == "1" ]] && \
+        matugen_cached_run "$img" "$MATUGEN_TYPE" "image" \
         matugen \
         $( [[ "$BASE16_BACKEND" != "disable" && -n "$BASE16_BACKEND" ]] && echo "--base16-backend" "$BASE16_BACKEND" ) \
         --mode "$THEME_MODE" \
@@ -728,8 +736,10 @@ apply_solid_color() {
 
     log "Matugen Solid Color: Hex=[${hex}] Mode=[${THEME_MODE}] Type=[${MATUGEN_TYPE}] Contrast=[${MATUGEN_CONTRAST}] Base16=[${BASE16_BACKEND}]"
 
-    # Try cache first
-    if matugen_cached_run "$hex" "$MATUGEN_TYPE" "color" \
+    # Try cache first (same reasoning as generate_colors: only allowed on
+    # refresh of the current color, never on a fresh apply)
+    if [[ "${ALLOW_MATUGEN_CACHE:-0}" == "1" ]] && \
+        matugen_cached_run "$hex" "$MATUGEN_TYPE" "color" \
         matugen \
         $( [[ "$BASE16_BACKEND" != "disable" && -n "$BASE16_BACKEND" ]] && echo "--base16-backend" "$BASE16_BACKEND" ) \
         --mode "$THEME_MODE" \
@@ -911,12 +921,32 @@ apply_wallpaper_direct() {
 
     awww_cmd+=("$img_path")
 
-    "${awww_cmd[@]}" 99>&- || die "Failed to apply wallpaper with awww"
+    # The transition is deferred until the color pipeline signals that it is
+    # about to reload running apps (FADE_GREENLIGHT, touched by the last
+    # matugen hook). The fade is then mid-animation when every open app
+    # repaints with the new theme, which masks the unavoidable one-frame
+    # reload flicker (the "shake" after wallpaper changes). Without a
+    # regeneration there is no repaint to mask, so the transition is instant.
+    rm -f "$FADE_GREENLIGHT"
+    if (( do_regen )); then
+        (
+            local -i waited=0
+            while [[ ! -f "$FADE_GREENLIGHT" ]]; do
+                (( waited += 1 ))
+                (( waited >= 120 )) && break
+                sleep 0.1
+            done
+            rm -f "$FADE_GREENLIGHT"
+            "${awww_cmd[@]}" 99>&- 2>&1 || warn "awww transition failed"
+        ) &
+    else
+        "${awww_cmd[@]}" 99>&- || die "Failed to apply wallpaper with awww"
+    fi
 
     update_wallpaper_tracker "$wallpaper_id"
 
     if (( do_regen )); then
-        generate_colors "$img_path"
+        ALLOW_MATUGEN_CACHE=0 generate_colors "$img_path"
     fi
 }
 
@@ -944,12 +974,29 @@ apply_wallpaper_selection() {
 
     awww_cmd+=("$wallpaper")
 
-    "${awww_cmd[@]}" 99>&- || die "Failed to apply wallpaper with awww"
+    # Same deferred-transition masking as apply_wallpaper_direct: the fade
+    # starts when the color pipeline signals the app-reload cascade, hiding
+    # the repaint flicker of every open app under the wallpaper transition.
+    rm -f "$FADE_GREENLIGHT"
+    if (( do_regen )); then
+        (
+            local -i waited=0
+            while [[ ! -f "$FADE_GREENLIGHT" ]]; do
+                (( waited += 1 ))
+                (( waited >= 120 )) && break
+                sleep 0.1
+            done
+            rm -f "$FADE_GREENLIGHT"
+            "${awww_cmd[@]}" 99>&- 2>&1 || warn "awww transition failed"
+        ) &
+    else
+        "${awww_cmd[@]}" 99>&- || die "Failed to apply wallpaper with awww"
+    fi
 
     update_wallpaper_tracker "$wallpaper_id"
 
     if (( do_regen )); then
-        generate_colors "$wallpaper"
+        ALLOW_MATUGEN_CACHE=0 generate_colors "$wallpaper"
     fi
 }
 
@@ -1008,7 +1055,9 @@ regenerate_current() {
         log "Current wallpaper: ${resolved_wallpaper##*/}"
     fi
 
-    generate_colors "$resolved_wallpaper"
+    # Refresh of the current wallpaper is the only safe cache hit: every
+    # rendered template in generated/ already matches this wallpaper.
+    ALLOW_MATUGEN_CACHE=1 generate_colors "$resolved_wallpaper"
 }
 
 # --- CLI ---

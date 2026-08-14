@@ -62,6 +62,7 @@ HOOK_TEMPLATES = frozenset({
     "swaync",
     "dunst",
     "cursor",
+    "standalone_commands",
 })
 
 

@@ -13,25 +13,13 @@
 input_path  = '~/.config/matugen/templates/gtk-colors.css'
 output_path = '~/.config/matugen/generated/gtk-3.css'
 post_hook   = '''
-  # Live-reloadable THEME: adw-gtk3 base + matugen overrides on top.
-  # This is the single source of truth for GTK3 colors: gsettings toggles
-  # re-read the theme css live (proven), while the user css (~/.config/
-  # gtk-3.0/gtk.css) is only read at startup and would mask the theme
-  # (priority 800 vs 400), so it must NOT be created.
+  # Live-reloadable THEME: the versioned adw-gtk3-matugen-* theme dir and the
+  # gtk settings (settings.ini / xsettingsd / gsettings) are rebuilt in the
+  # standalone_commands post_hook, which runs AFTER the papirus accent renders
+  # (gtk3 renders before papirus, so the versioned name would be stale here).
+  # The user css (~/.config/gtk-3.0/gtk.css) is only read at startup and would
+  # mask the theme (priority 800 vs 400), so it must NOT be created.
   rm -f "$HOME/.config/gtk-3.0/gtk.css"
-
-  # The name is versioned by the source color so running GTK3 apps always get
-  # a fresh, uncached theme on toggle.
-  NAME="adw-gtk3-matugen-$(sed -n '1s/^#//p' "$HOME/.config/matugen/generated/papirus")"
-  mkdir -p "$HOME/.local/share/themes/$NAME/gtk-3.0"
-  [[ -f "$HOME/.local/share/themes/$NAME/index.theme" ]] || \
-    cp /usr/share/themes/adw-gtk3/index.theme "$HOME/.local/share/themes/$NAME/"
-  cat /usr/share/themes/adw-gtk3/gtk-3.0/gtk.css \
-      "$HOME/.config/matugen/generated/gtk-3.css" \
-      > "$HOME/.local/share/themes/$NAME/gtk-3.0/gtk.css"
-  find "$HOME/.local/share/themes" -maxdepth 1 -type d \
-       -name 'adw-gtk3-matugen-*' ! -name "$NAME" \
-       -exec rm -rf {} + 2>/dev/null || :
 '''
 
 [templates.gtk4]
@@ -87,7 +75,14 @@ post_hook   = '''
 [templates.hyprland]
 input_path  = '~/.config/matugen/templates/hyprland-colors.lua'
 output_path = '~/.config/matugen/generated/hyprland-colors.lua'
-post_hook   = 'hyprctl reload config-only || :'
+post_hook   = '''
+  # Greenlight for the deferred wallpaper transition: theme_ctl's awww fade
+  # waits for this file so the transition is still animating while every
+  # open app repaints below (masks the reload flicker / "shake"). First
+  # statement of the first hook so every reload after this point is masked.
+  touch "${XDG_RUNTIME_DIR:-/tmp}/dusky-fade-go" 2>/dev/null || :
+  hyprctl reload config-only || :
+'''
 
 [templates.hyprlock]
 input_path  = '~/.config/matugen/templates/hyprlock-colors.conf'
@@ -390,13 +385,49 @@ post_hook   = '''
   # echo "Matugen ran successfully" > /tmp/matugen_status.txt
   # bash $HOME/scripts/some_other_theme_script.sh
 
+  # --- GTK3/GTK4 live theme: single source of truth -------------------------
+  # This hook runs LAST, after every template rendered, so generated/papirus
+  # and gtk-3.css are fresh. It builds a versioned adw-gtk3-matugen-* theme
+  # dir and points settings.ini + xsettingsd at it for apps that read those
+  # files. The gsettings sets below apply the theme LIVE to running GTK apps
+  # (verified on Wayland with grim pixel analysis: no restart needed).
+  NAME="adw-gtk3-matugen-$(sed -n '1s/^#//p' "$HOME/.config/matugen/generated/papirus" 2>/dev/null)"
+  if [[ -z "$NAME" || "$NAME" == "adw-gtk3-matugen-" ]]; then
+    NAME="adw-gtk3-matugen-$(sed -n 's/^@define-color accent_color #//p' "$HOME/.config/matugen/generated/gtk-3.css" 2>/dev/null | head -1)"
+  fi
+  if [[ -n "$NAME" && "$NAME" != "adw-gtk3-matugen-" ]]; then
+    mkdir -p "$HOME/.local/share/themes/$NAME/gtk-3.0"
+    [[ -f "$HOME/.local/share/themes/$NAME/index.theme" ]] || \
+      cp /usr/share/themes/adw-gtk3/index.theme "$HOME/.local/share/themes/$NAME/" 2>/dev/null || :
+    cat /usr/share/themes/adw-gtk3/gtk-3.0/gtk.css \
+        "$HOME/.config/matugen/generated/gtk-3.css" \
+        > "$HOME/.local/share/themes/$NAME/gtk-3.0/gtk.css" 2>/dev/null || :
+    find "$HOME/.local/share/themes" -maxdepth 1 -type d \
+         -name 'adw-gtk3-matugen-*' ! -name "$NAME" \
+         -exec rm -rf {} + 2>/dev/null || :
+
+    for ini in "$HOME/.config/gtk-3.0/settings.ini" "$HOME/.config/gtk-4.0/settings.ini"; do
+      [[ -f "$ini" ]] || continue
+      sed -i "s/^gtk-theme-name=.*/gtk-theme-name=$NAME/" "$ini"
+      sed -i "s/^gtk-icon-theme-name=.*/gtk-icon-theme-name=Papirus/" "$ini"
+    done
+    XS="$HOME/.config/xsettingsd/xsettingsd.conf"
+    if [[ -f "$XS" ]]; then
+      sed -i "s@^Net/ThemeName .*@Net/ThemeName \"$NAME\"@" "$XS"
+      sed -i "s@^Net/IconThemeName .*@Net/IconThemeName \"Papirus\"@" "$XS"
+    fi
+  fi
+
   # Force running GTK apps to re-read the freshly generated CSS and icons
   # without a restart. Same value twice is a no-op, so the gtk-theme name is
   # versioned by the source color and icons bounce through a real installed
-  # theme ('Adwaita') to invalidate the process-local caches.
-  NAME="adw-gtk3-matugen-$(sed -n '1s/^#//p' "$HOME/.config/matugen/generated/papirus")"
+  # theme ('Adwaita') to invalidate the process-local caches. The icon
+  # bounce MUST pause between the two sets: two rapid gsettings writes are
+  # coalesced by GTK into a single no-op, and file managers like Thunar
+  # would keep rendering the old folder colors (verified live via grim).
   gsettings set org.gnome.desktop.interface gtk-theme "$NAME" 2>/dev/null || :
   gsettings set org.gnome.desktop.interface icon-theme 'Adwaita' 2>/dev/null || :
+  sleep 0.5
   gsettings set org.gnome.desktop.interface icon-theme 'Papirus' 2>/dev/null || :
 '''
 
