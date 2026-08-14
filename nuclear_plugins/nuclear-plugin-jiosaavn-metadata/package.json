@@ -1,0 +1,31 @@
+{
+  "name": "nuclear-plugin-jiosaavn-metadata",
+  "version": "0.1.0",
+  "description": "JioSaavn metadata provider for Nuclear",
+  "author": "Zer0x-dev0",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@nuclearplayer/plugin-sdk": "^2.7.0",
+    "typescript": "^5.6.0"
+  },
+  "nuclear": {
+    "displayName": "JioSaavn Metadata",
+    "category": "metadata",
+    "categories": [
+      "metadata"
+    ],
+    "icon": {
+      "type": "link",
+      "link": "https://www.youtube.com/s/desktop/26a583e4/img/favicon_144x144.png"
+    },
+    "permissions": []
+  },
+  "dependencies": {
+    "@nuclearplayer/plugin-sdk": "^2.7.0"
+  }
+}
