@@ -33,7 +33,9 @@
 
     "radius-sm": "4px",
     "radius-md": "8px",
-    "radius-lg": "16px"
+    "radius-lg": "16px",
+
+    "injected-ui": "0px}@media(hover:hover){button:hover,a:hover,[role=button]:hover,[role=menuitem]:hover,[role=option]:hover,[role=tab]:hover,[role=checkbox]:hover,[role=slider]:hover,.cursor-pointer:hover,input[type=range]:hover{filter:brightness(1.15)}}#pad{"
   },
   "dark": {
     "background": "{{colors.surface.default.hex}}",
