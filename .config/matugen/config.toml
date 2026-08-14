@@ -150,6 +150,7 @@ output_path = '~/.config/matugen/generated/khal-config'
 post_hook   = 'ln -nfs "$HOME/.config/matugen/generated/khal-config" "$HOME/.config/khal/config"'
 
 [templates.zellij]
+enabled     = false # zellij not installed; re-enable if adopted
 input_path  = '~/.config/matugen/templates/zellij.kdl'
 output_path = '~/.config/matugen/generated/zellij.kdl'
 post_hook   = '''
