@@ -532,21 +532,28 @@ hl.window_rule({
   no_blur = false,
 })
 
---- Dusky Screentime TUI ---
-hl.window_rule({
-  name = "dusky_screentime_tui",
-  match = { class = "^(dusky_screentime_tui|screentime_tui\\.py)$" },
-  float = true,
-  size = {"(monitor_w*0.95)", "(monitor_h*0.95)"},
-  center = true,
-})
-
 --- Foot Terminal Blur ---
 hl.window_rule({
   name = "foot_blur",
   match = { class = "^(foot)$" },
   no_blur = false,
-  opacity = "1.0 override 1.0 override",
+  opacity = "0.92 override 0.92 override",
+  no_dim = true,
+})
+
+--- Thunar glassy mode ---
+hl.window_rule({
+  name = "thunar_glassy",
+  match = { class = "^(thunar|Thunar)$" },
+  no_blur = false,
+  opacity = "0.9 override 0.9 override",
+})
+
+--- Kitty (match global 0.85 opacity) ---
+hl.window_rule({
+  name = "kitty_brighter",
+  match = { class = "^(kitty)$" },
+  opacity = "1.0 1.0",
   no_dim = true,
 })
 
@@ -1186,8 +1193,7 @@ hl.window_rule({
         class = "^(com\\.github\\.dusky\\.controlcenter)$",
     },
     float = true,
-    size = {630, "(monitor_h*0.90)"},
-    center = true,
+    size = {"monitor_w * 0.3958", "monitor_h * 0.9093"},
     animation = "slide up",
     workspace = "unset",
     focus_on_activate = true
@@ -1422,6 +1428,18 @@ hl.window_rule({
     center = true
 })
 
+--- Ollama sidebar script ---
+hl.window_rule({
+    name = "ollama_terminal.sh",
+    match = { class = "^(ollama_terminal.sh)$" },
+    float = true,
+    -- size = {409, 710},
+    -- move = {50, "(monitor_h*0.5 - window_h*0.5)"},
+    size = {"(monitor_w*0.28)", "(monitor_h*0.88)"},
+    animation = "slide left",
+    rounding = 9,
+    move = {"(monitor_w*0.038)", "(monitor_h*0.5 - window_h*0.5)"}
+})
 
 --- dusky_service_toggle.sh script ---
 hl.window_rule({
@@ -1937,31 +1955,6 @@ hl.window_rule({
     center = true
 })
 
---- 470_vesktop_matugen.sh (Vesktop Setup Script & Vesktop GUI - 80% W, 80% H Floating Dynamic) ---
-hl.window_rule({
-    name = "470_vesktop_matugen.sh",
-    match = { class = "^(470_vesktop_matugen\\.sh|vesktop)$" },
-    float = true,
-    size = {"(monitor_w*0.80)", "(monitor_h*0.80)"},
-    center = true
-})
-
 -- =============================================================================
 -- END OF FILE
 -- =============================================================================
-
---- Dusky LLM Side Panel Script ---
-hl.window_rule({
-    name = "dusky_llm_side_panal",
-    match = {
-        class = "^(dusky_llm_side_panal\\.py)$",
-    },
-    float = true,
-    animation = "slide left",
-    no_dim = true,
-    rounding = 16,
-    move = {"16", "(monitor_h-window_h)/2"},
-    border_size = 0,
-    workspace = "unset",
-    focus_on_activate = true
-})
