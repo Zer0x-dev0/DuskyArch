@@ -16,13 +16,13 @@
     "border-input": "{{colors.outline_variant.default.hex}}",
     "ring": "{{colors.primary.default.hex}}",
 
-    "accent-green": "oklch(79.05% 0.209 147.58)",
-    "accent-yellow": "oklch(95.53% 0.134 112.76)",
-    "accent-purple": "oklch(74.2% 0.149 301.88)",
-    "accent-blue": "oklch(55.98% 0.08 270.09)",
-    "accent-orange": "oklch(83.39% 0.124 66.56)",
-    "accent-cyan": "oklch(88.26% 0.093 212.85)",
-    "accent-red": "oklch(68.22% 0.206 24.43)",
+    "accent-green": "#3d9e5f",
+    "accent-yellow": "#d9b25a",
+    "accent-purple": "#9a7bd4",
+    "accent-blue": "#5c8ec9",
+    "accent-orange": "#d9825a",
+    "accent-cyan": "#56b3c4",
+    "accent-red": "#c95f66",
 
     "border-width": "1px",
 
@@ -50,13 +50,13 @@
     "border-input": "{{colors.outline.default.hex}}",
     "ring": "{{colors.primary.default.hex}}",
 
-    "accent-green": "oklch(79.05% 0.209 147.58)",
-    "accent-yellow": "oklch(95.53% 0.134 112.76)",
-    "accent-purple": "oklch(74.2% 0.149 301.88)",
-    "accent-blue": "oklch(55.98% 0.08 270.09)",
-    "accent-orange": "oklch(83.39% 0.124 66.56)",
-    "accent-cyan": "oklch(88.26% 0.093 212.85)",
-    "accent-red": "oklch(68.22% 0.206 24.43)",
+    "accent-green": "#3d9e5f",
+    "accent-yellow": "#d9b25a",
+    "accent-purple": "#9a7bd4",
+    "accent-blue": "#5c8ec9",
+    "accent-orange": "#d9825a",
+    "accent-cyan": "#56b3c4",
+    "accent-red": "#c95f66",
 
     "border-width": "1px",
 
