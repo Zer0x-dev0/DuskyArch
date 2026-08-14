@@ -664,14 +664,15 @@ generate_colors() {
     local -a cmd
     local output
     local i
+    local -i cache_hit=0
 
     [[ -f "$img" ]] || die "Image file does not exist: $img"
 
     log "Matugen: Mode=[${THEME_MODE}] Type=[${MATUGEN_TYPE}] Contrast=[${MATUGEN_CONTRAST}] Index=[${SOURCE_COLOR_INDEX}] Base16=[${BASE16_BACKEND}]"
 
-    # Try cache first (only when allowed: refresh of the current wallpaper is
-    # the only safe hit, since a hit restores colors.css only while the other
-    # rendered templates would stay stale from the previous wallpaper)
+    # Try cache first. A hit restores a full snapshot of generated/ (every
+    # rendered template), so wallpaper changes re-apply instantly without a
+    # matugen run; a miss runs matugen once and snapshots the result.
     if [[ "${ALLOW_MATUGEN_CACHE:-0}" == "1" ]] && \
         matugen_cached_run "$img" "$MATUGEN_TYPE" "image" \
         matugen \
@@ -681,7 +682,8 @@ generate_colors() {
         $( [[ "$MATUGEN_CONTRAST" != "disable" && "$MATUGEN_CONTRAST" != "0" && "$MATUGEN_CONTRAST" != "0.0" && -n "$MATUGEN_CONTRAST" ]] && echo "--contrast" "$MATUGEN_CONTRAST" ) \
         --source-color-index "$SOURCE_COLOR_INDEX" \
         image "$img"; then
-        log "Matugen: cache hit for $img"
+        cache_hit=1
+        log "Matugen: templates up to date for ${img##*/}"
     else
         # Cache miss - run normally with fallback logic
         cmd=(matugen)
@@ -714,14 +716,19 @@ generate_colors() {
             fi
         fi
 
-        # Cache the result
-        mkdir -p "${MATUGEN_CACHE_DIR}"
+        # Snapshot the rendered templates for future cache hits
         local key
         key=$(matugen_cache_key "$img")
-        if [[ -f "${GENERATED_DIR}/colors.css" && ! -L "${GENERATED_DIR}/colors.css" ]]; then
-            cp "${GENERATED_DIR}/colors.css" "${MATUGEN_CACHE_DIR}/${key}" 2>/dev/null || true
-        fi
+        ensure_dir "${MATUGEN_CACHE_DIR}/${key}/generated"
+        rsync -a --delete "$GENERATED_DIR/" "${MATUGEN_CACHE_DIR}/${key}/generated/" 2>/dev/null || \
+            warn "Failed to snapshot generated templates for $img"
         printf '%s' "$img" > "${MATUGEN_CACHE_DIR}/${key}.meta"
+    fi
+
+    if (( cache_hit )); then
+        # No matugen ran, so its post_hooks never fired: re-run the app
+        # reload cascade manually (also re-touches the fade greenlight).
+        run_apply_hooks
     fi
 
     if command -v gsettings >/dev/null 2>&1; then
@@ -735,6 +742,7 @@ apply_solid_color() {
     local hex="$1"
     local -a cmd
     local output
+    local -i cache_hit=0
 
     [[ "$hex" =~ ^#?[a-fA-F0-9]{6}$ ]] || die "Invalid HEX color: $hex"
     [[ "$hex" != \#* ]] && hex="#${hex}"
@@ -751,7 +759,8 @@ apply_solid_color() {
         $( [[ "$MATUGEN_TYPE" != "disable" && -n "$MATUGEN_TYPE" ]] && echo "--type" "$MATUGEN_TYPE" ) \
         $( [[ "$MATUGEN_CONTRAST" != "disable" && "$MATUGEN_CONTRAST" != "0" && "$MATUGEN_CONTRAST" != "0.0" && -n "$MATUGEN_CONTRAST" ]] && echo "--contrast" "$MATUGEN_CONTRAST" ) \
         color hex "$hex"; then
-        log "Matugen: cache hit for solid color $hex"
+        cache_hit=1
+        log "Matugen: templates up to date for $hex"
     else
         # Cache miss - run normally
         cmd=(matugen)
@@ -765,14 +774,19 @@ apply_solid_color() {
             die "Matugen color generation failed: $output"
         fi
 
-        # Cache the result
-        mkdir -p "${MATUGEN_CACHE_DIR}"
+        # Snapshot the rendered templates for future cache hits
         local key
         key=$(matugen_cache_key "$hex" "$MATUGEN_TYPE" "color")
-        if [[ -f "${GENERATED_DIR}/colors.css" && ! -L "${GENERATED_DIR}/colors.css" ]]; then
-            cp "${GENERATED_DIR}/colors.css" "${MATUGEN_CACHE_DIR}/${key}" 2>/dev/null || true
-        fi
+        ensure_dir "${MATUGEN_CACHE_DIR}/${key}/generated"
+        rsync -a --delete "$GENERATED_DIR/" "${MATUGEN_CACHE_DIR}/${key}/generated/" 2>/dev/null || \
+            warn "Failed to snapshot generated templates for $hex"
         printf '%s' "$hex" > "${MATUGEN_CACHE_DIR}/${key}.meta"
+    fi
+
+    if (( cache_hit )); then
+        # No matugen ran, so its post_hooks never fired: re-run the app
+        # reload cascade manually (also re-touches the fade greenlight).
+        run_apply_hooks
     fi
 
     if command -v gsettings >/dev/null 2>&1; then
@@ -795,48 +809,33 @@ matugen_cached_run() {
     local img="$1"
     local scheme="${2:-$MATUGEN_TYPE}"
     local mode="${3:-image}"
-    local -a cmd=("${@:4}")
 
     local key
     key=$(matugen_cache_key "$img" "$scheme" "$mode")
+    local cache_dir="${MATUGEN_CACHE_DIR}/${key}"
+    local snapshot_dir="${cache_dir}/generated"
     local cache_file="${MATUGEN_CACHE_DIR}/${key}"
-    local lock_file="${cache_file}.lock"
 
     mkdir -p "${MATUGEN_CACHE_DIR}"
 
-    # Fast path: cache hit
-    if [[ -f "${cache_file}" && -f "${cache_file}.meta" ]]; then
+    # Pure restore: return 0 only on a true hit (the caller runs matugen on a
+    # miss). A hit restores a full snapshot of generated/, i.e. every rendered
+    # template, so wallpaper changes re-apply without a matugen run. Callers
+    # are serialized by run_locked, so no extra lock is needed here.
+    if [[ -d "${snapshot_dir}" && -f "${cache_file}.meta" ]]; then
         local cached_img
         cached_img=$(<"${cache_file}.meta")
         if [[ "$cached_img" == "$1" ]]; then
-            ln -sf "${cache_file}" "${GENERATED_DIR}/colors.css" 2>/dev/null || true
+            ensure_dir "$GENERATED_DIR"
+            rsync -a --delete "${snapshot_dir}/" "$GENERATED_DIR/" 2>/dev/null || {
+                warn "Cache restore failed for $img"
+                return 1
+            }
             return 0
         fi
     fi
 
-    # Miss: run matugen with lock to prevent duplicate runs
-    exec 9>"${lock_file}"
-    flock -x -w 10 9 || { warn "Matugen cache lock timeout"; return 1; }
-
-    # Double-check after lock
-    if [[ -f "${cache_file}" && -f "${cache_file}.meta" ]]; then
-        local cached_img
-        cached_img=$(<"${cache_file}.meta")
-        if [[ "$cached_img" == "$1" ]]; then
-            ln -sf "${cache_file}" "${GENERATED_DIR}/colors.css" 2>/dev/null || true
-            return 0
-        fi
-    fi
-
-    # Run matugen
-    if output=$("${cmd[@]}" 99>&- 2>&1); then
-        # Cache the generated colors.css
-        cp "${GENERATED_DIR}/colors.css" "${cache_file}" 2>/dev/null
-        printf '%s' "$1" > "${cache_file}.meta"
-        return 0
-    else
-        return 1
-    fi
+    return 1
 }
 
 build_matugen_base() {
@@ -860,8 +859,6 @@ sweep_profiles() {
     local source="$2"
     local scheme
     local -a base=()
-    local -a pids=()
-    local pid
 
     ensure_profile_configs || { warn "Profile sweep skipped (config helper unavailable)."; return 0; }
 
@@ -872,6 +869,9 @@ sweep_profiles() {
 
     build_matugen_base base
 
+    # Fire-and-forget: pre-warm other schemes in the background so the active
+    # theme change is never blocked. 99>&- releases the run lock immediately,
+    # so a following theme_ctl invocation never waits on these matugen jobs.
     for scheme in "${active_schemes[@]}"; do
         [[ "$scheme" == "$MATUGEN_TYPE" ]] && continue
         {
@@ -880,12 +880,7 @@ sweep_profiles() {
             else
                 matugen -q -c "${PROFILE_CONFIGS_DIR}/${scheme}.toml" -t "$scheme" "${base[@]}" color hex "$source"
             fi
-        } >/dev/null 2>&1 &
-        pids+=($!)
-    done
-
-    for pid in "${pids[@]}"; do
-        wait "$pid" || warn "Profile sweep: one or more schemes failed to generate."
+        } >/dev/null 2>&1 99>&- &
     done
 
     ensure_dir "$PROFILES_ROOT/$MATUGEN_TYPE"
@@ -953,7 +948,7 @@ apply_wallpaper_direct() {
     update_wallpaper_tracker "$wallpaper_id"
 
     if (( do_regen )); then
-        ALLOW_MATUGEN_CACHE=0 generate_colors "$img_path"
+        ALLOW_MATUGEN_CACHE=1 generate_colors "$img_path"
     fi
 }
 
@@ -1003,7 +998,7 @@ apply_wallpaper_selection() {
     update_wallpaper_tracker "$wallpaper_id"
 
     if (( do_regen )); then
-        ALLOW_MATUGEN_CACHE=0 generate_colors "$wallpaper"
+        ALLOW_MATUGEN_CACHE=1 generate_colors "$wallpaper"
     fi
 }
 
@@ -1408,7 +1403,7 @@ case "${1:-}" in
         [[ -n "${1:-}" ]] || die "color command requires a hex value (e.g., FF0000 or \"#FF0000\")"
         hex_val="$1"
         check_deps flock pgrep matugen
-        run_locked apply_solid_color "$hex_val"
+        ALLOW_MATUGEN_CACHE=1 run_locked apply_solid_color "$hex_val"
         ;;
     profile)
         shift
