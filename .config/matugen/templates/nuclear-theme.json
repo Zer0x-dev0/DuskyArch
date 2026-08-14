@@ -28,8 +28,8 @@
 
     "shadow-color": "oklch(0% 0 0 / 0.3)",
     "shadow-x": "0px",
-    "shadow-y": "4px",
-    "shadow-blur": "12px",
+    "shadow-y": "0px",
+    "shadow-blur": "0px",
 
     "radius-sm": "4px",
     "radius-md": "8px",
@@ -62,8 +62,8 @@
 
     "shadow-color": "oklch(0% 0 0 / 0.5)",
     "shadow-x": "0px",
-    "shadow-y": "8px",
-    "shadow-blur": "24px",
+    "shadow-y": "0px",
+    "shadow-blur": "0px",
 
     "radius-sm": "4px",
     "radius-md": "8px",
