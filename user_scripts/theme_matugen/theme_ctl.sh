@@ -59,7 +59,10 @@ readonly PROFILES_ROOT="${HOME}/.config/matugen/generated_profiles"
 readonly PROFILE_CONFIGS_DIR="${HOME}/.config/matugen/profiles"
 readonly PROFILE_GEN_PY="${HOME}/user_scripts/theme_matugen/gen_profile_configs.py"
 readonly APPLY_HOOKS_SH="${PROFILE_CONFIGS_DIR}/apply_hooks.sh"
-readonly MATUGEN_CACHE_DIR="${HOME}/.cache/matugen"
+# Dedicated cache dir: matugen's own cache lives in ~/.cache/matugen and its
+# restore path can symlink generated/colors.css onto our cache files, which
+# turns our cache-write cp into a same-file no-op that fails silently.
+readonly MATUGEN_CACHE_DIR="${HOME}/.cache/dusky-matugen"
 
 # Every color scheme type matugen can extract from the wallpaper
 readonly ALL_SCHEMES=(
@@ -715,7 +718,9 @@ generate_colors() {
         mkdir -p "${MATUGEN_CACHE_DIR}"
         local key
         key=$(matugen_cache_key "$img")
-        cp "${GENERATED_DIR}/colors.css" "${MATUGEN_CACHE_DIR}/${key}" 2>/dev/null
+        if [[ -f "${GENERATED_DIR}/colors.css" && ! -L "${GENERATED_DIR}/colors.css" ]]; then
+            cp "${GENERATED_DIR}/colors.css" "${MATUGEN_CACHE_DIR}/${key}" 2>/dev/null || true
+        fi
         printf '%s' "$img" > "${MATUGEN_CACHE_DIR}/${key}.meta"
     fi
 
@@ -764,7 +769,9 @@ apply_solid_color() {
         mkdir -p "${MATUGEN_CACHE_DIR}"
         local key
         key=$(matugen_cache_key "$hex" "$MATUGEN_TYPE" "color")
-        cp "${GENERATED_DIR}/colors.css" "${MATUGEN_CACHE_DIR}/${key}" 2>/dev/null
+        if [[ -f "${GENERATED_DIR}/colors.css" && ! -L "${GENERATED_DIR}/colors.css" ]]; then
+            cp "${GENERATED_DIR}/colors.css" "${MATUGEN_CACHE_DIR}/${key}" 2>/dev/null || true
+        fi
         printf '%s' "$hex" > "${MATUGEN_CACHE_DIR}/${key}.meta"
     fi
 
