@@ -32,6 +32,12 @@ hl.on("hyprland.start", function()
     hl.exec_cmd([[sh -c 'sleep 0.8; . $HOME/.config/dusky/settings/cliphist_db_env && exec wl-paste --type text --watch sh -c "[ \"\$CLIPBOARD_STATE\" = data ] && cliphist store"' ]])
     hl.exec_cmd([[sh -c 'sleep 0.8; . $HOME/.config/dusky/settings/cliphist_db_env && exec wl-paste --type image --watch sh -c "[ \"\$CLIPBOARD_STATE\" = data ] && cliphist store"' ]])
 
+    -- --- THEME RESTORE - survives VM restarts ---
+    -- Nothing else restores the theme at login (wallpaper, cursor, GTK theme).
+    -- Deferred 3s so awww-daemon/waybar are up; cache-hit refresh is fast and
+    -- re-applies hooks (cursor recolor, waybar USR2, gsettings, wallpaper).
+    hl.exec_cmd([[sh -c 'sleep 3; $HOME/user_scripts/theme_matugen/theme_ctl.sh refresh >/dev/null 2>&1' ]])
+
 
 end)
 

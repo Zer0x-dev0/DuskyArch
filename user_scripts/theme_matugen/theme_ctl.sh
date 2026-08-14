@@ -59,6 +59,7 @@ readonly PROFILES_ROOT="${HOME}/.config/matugen/generated_profiles"
 readonly PROFILE_CONFIGS_DIR="${HOME}/.config/matugen/profiles"
 readonly PROFILE_GEN_PY="${HOME}/user_scripts/theme_matugen/gen_profile_configs.py"
 readonly APPLY_HOOKS_SH="${PROFILE_CONFIGS_DIR}/apply_hooks.sh"
+readonly CURSOR_RECOLOR_SH="${HOME}/user_scripts/theme_matugen/cursor_recolor.sh"
 # Dedicated cache dir: matugen's own cache lives in ~/.cache/matugen and its
 # restore path can symlink generated/colors.css onto our cache files, which
 # turns our cache-write cp into a same-file no-op that fails silently.
@@ -891,11 +892,20 @@ sweep_profiles() {
     python3 "$PROFILE_GEN_PY" --mark-recent "$MATUGEN_TYPE" >/dev/null 2>&1 || true
 }
 
-# Re-fire every app reload hook after a cached profile swap (no matugen run)
+# Re-fire every app reload hook after a cached profile swap (no matugen run).
+# Also fires the theme-notify palette popup and the cursor recolor that
+# matugen's own post_hooks would normally trigger, so both still happen on
+# cache hits (cursor_recolor falls back to the restored generated/colors.css).
 run_apply_hooks() {
     [[ -f "$APPLY_HOOKS_SH" ]] || { warn "Apply hooks script missing; skipping app reloads."; return 0; }
     log "Re-applying active theme to apps..."
     bash "$APPLY_HOOKS_SH" || warn "Some app hooks reported errors."
+    if [[ -f "${GENERATED_DIR}/theme-notify.sh" ]]; then
+        bash "${GENERATED_DIR}/theme-notify.sh" >/dev/null 2>&1 || :
+    fi
+    if [[ -f "$CURSOR_RECOLOR_SH" ]]; then
+        bash "$CURSOR_RECOLOR_SH" >/dev/null 2>&1 || warn "Cursor recolor hook reported errors."
+    fi
 }
 
 apply_wallpaper_direct() {

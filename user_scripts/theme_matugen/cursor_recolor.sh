@@ -92,6 +92,80 @@ mv "$ICONS_DIR/theme_$THEME_NAME" "$ICONS_DIR/$THEME_NAME"
 # Clear hyprcursor render cache so new colors aren't served stale.
 rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/hyprcursor" 2>/dev/null || true
 
+# ---------------------------------------------------------------------------
+# Xcursor (GTK/X11 apps) theme: GTK apps (file managers, etc.) cannot read
+# hyprcursor .hlc zips. Render the recolored SVGs to PNG and compile them
+# with xcursorgen so the entire desktop uses the recolored cursor, not just
+# Hyprland. Then wire GTK settings + gsettings to point at this theme.
+# ---------------------------------------------------------------------------
+XCURSOR_DIR="$ICONS_DIR/$THEME_NAME/cursors"
+X11_WORK="${WORK_DIR}.x11"
+rm -rf "$XCURSOR_DIR" "$X11_WORK"
+mkdir -p "$XCURSOR_DIR" "$X11_WORK"
+
+if command -v rsvg-convert >/dev/null 2>&1 && command -v xcursorgen >/dev/null 2>&1; then
+    SIZES=(18 24 32 48 64)
+    ALIASES=()
+    while IFS= read -r -d '' meta; do
+        name="$(basename "$(dirname "$meta")")"
+        dir="$(dirname "$meta")"
+        img="$dir/image.svg"
+        [[ -f "$img" ]] || img="$dir/image-01.svg"
+        [[ -f "$img" ]] || continue
+
+        hx="$(sed -n 's/^hotspot_x = //p' "$meta" | head -1)"
+        hy="$(sed -n 's/^hotspot_y = //p' "$meta" | head -1)"
+        hx="${hx:-0.5}"; hy="${hy:-0.5}"
+
+        conf="$X11_WORK/$name.conf"
+        : > "$conf"
+        for sz in "${SIZES[@]}"; do
+            png="$X11_WORK/$name-$sz.png"
+            rsvg-convert -w "$sz" -h "$sz" "$img" -o "$png" 2>/dev/null || continue
+            xhot="$(awk -v h="$hx" -v s="$sz" 'BEGIN{printf "%d", h*s+0.5}')"
+            yhot="$(awk -v h="$hy" -v s="$sz" 'BEGIN{printf "%d", h*s+0.5}')"
+            printf '%s %s %s %s\n' "$sz" "$xhot" "$yhot" "$png" >> "$conf"
+        done
+        [[ -s "$conf" ]] || continue
+        xcursorgen "$conf" "$XCURSOR_DIR/$name" 2>/dev/null || continue
+        while IFS= read -r alias; do
+            ALIASES+=("$name $alias")
+        done < <(sed -n 's/^define_override = //p' "$meta")
+    done < <(find "$WORK_DIR/hyprcursors" -name meta.hl -print0)
+
+    for pair in "${ALIASES[@]}"; do
+        src="${pair%% *}"; dst="${pair##* }"
+        [[ "$src" == "$dst" ]] && continue
+        [[ -f "$XCURSOR_DIR/$src" ]] && ln -sf "$src" "$XCURSOR_DIR/$dst" 2>/dev/null || true
+    done
+
+    cat > "$ICONS_DIR/$THEME_NAME/index.theme" <<'EOF'
+[Icon Theme]
+Name=Matugen-Cursor
+Comment=Recolored from the wallpaper by matugen
+Inherits=Adwaita
+EOF
+fi
+
+# Point GTK apps (file managers, etc.) at the recolored theme.
+for ini in "$HOME/.config/gtk-3.0/settings.ini" "$HOME/.config/gtk-4.0/settings.ini"; do
+    [[ -f "$ini" ]] || continue
+    sed -i "s/^gtk-cursor-theme-name=.*/gtk-cursor-theme-name=Matugen-Cursor/" "$ini"
+    sed -i "s/^gtk-cursor-theme-size=.*/gtk-cursor-theme-size=$CURSOR_SIZE/" "$ini"
+done
+XS="$HOME/.config/xsettingsd/xsettingsd.conf"
+if [[ -f "$XS" ]]; then
+    sed -i "s@^Gtk/CursorThemeName .*@Gtk/CursorThemeName \"Matugen-Cursor\"@" "$XS"
+    sed -i "s@^Gtk/CursorThemeSize .*@Gtk/CursorThemeSize $CURSOR_SIZE@" "$XS"
+fi
+gsettings set org.gnome.desktop.interface cursor-theme "Matugen-Cursor" 2>/dev/null || true
+gsettings set org.gnome.desktop.interface cursor-size "$CURSOR_SIZE" 2>/dev/null || true
+if pgrep -x xsettingsd >/dev/null 2>&1; then
+    pkill -x xsettingsd || true
+    sleep 0.3
+    xsettingsd >/dev/null 2>&1 & disown || true
+fi
+
 # Apply cursor theme and force immediate visual refresh.
 # Wayland cursor surface only re-renders on shape change or mouse move.
 # Strategy: clear cache → set theme → force surface rebuild via theme toggle + mouse nudge.
