@@ -923,32 +923,22 @@ apply_wallpaper_direct() {
 
     awww_cmd+=("$img_path")
 
-    # The transition is deferred until the color pipeline signals that it is
-    # about to reload running apps (FADE_GREENLIGHT, touched by the last
-    # matugen hook). The fade is then mid-animation when every open app
-    # repaints with the new theme, which masks the unavoidable one-frame
-    # reload flicker (the "shake" after wallpaper changes). Without a
-    # regeneration there is no repaint to mask, so the transition is instant.
-    rm -f "$FADE_GREENLIGHT"
+    update_wallpaper_tracker "$wallpaper_id"
+
+    # OPTIMIZATION: Run wallpaper transition IMMEDIATELY in parallel with matugen
+    # This eliminates the 6-8s delay where wallpaper waits for matugen to complete
     if (( do_regen )); then
+        # Start awww transition immediately (background)
         (
-            local -i waited=0
-            while [[ ! -f "$FADE_GREENLIGHT" ]]; do
-                (( waited += 1 ))
-                (( waited >= 120 )) && break
-                sleep 0.1
-            done
-            rm -f "$FADE_GREENLIGHT"
             "${awww_cmd[@]}" 99>&- 2>&1 || warn "awww transition failed"
+        ) &
+
+        # Run matugen in parallel (background) - colors update when ready
+        (
+            ALLOW_MATUGEN_CACHE=1 generate_colors "$img_path"
         ) &
     else
         "${awww_cmd[@]}" 99>&- || die "Failed to apply wallpaper with awww"
-    fi
-
-    update_wallpaper_tracker "$wallpaper_id"
-
-    if (( do_regen )); then
-        ALLOW_MATUGEN_CACHE=1 generate_colors "$img_path"
     fi
 }
 
@@ -976,29 +966,22 @@ apply_wallpaper_selection() {
 
     awww_cmd+=("$wallpaper")
 
-    # Same deferred-transition masking as apply_wallpaper_direct: the fade
-    # starts when the color pipeline signals the app-reload cascade, hiding
-    # the repaint flicker of every open app under the wallpaper transition.
-    rm -f "$FADE_GREENLIGHT"
+    update_wallpaper_tracker "$wallpaper_id"
+
+    # OPTIMIZATION: Run wallpaper transition IMMEDIATELY in parallel with matugen
+    # This eliminates the 6-8s delay where wallpaper waits for matugen to complete
     if (( do_regen )); then
+        # Start awww transition immediately (background)
         (
-            local -i waited=0
-            while [[ ! -f "$FADE_GREENLIGHT" ]]; do
-                (( waited += 1 ))
-                (( waited >= 120 )) && break
-                sleep 0.1
-            done
-            rm -f "$FADE_GREENLIGHT"
             "${awww_cmd[@]}" 99>&- 2>&1 || warn "awww transition failed"
+        ) &
+
+        # Run matugen in parallel (background) - colors update when ready
+        (
+            ALLOW_MATUGEN_CACHE=1 generate_colors "$wallpaper"
         ) &
     else
         "${awww_cmd[@]}" 99>&- || die "Failed to apply wallpaper with awww"
-    fi
-
-    update_wallpaper_tracker "$wallpaper_id"
-
-    if (( do_regen )); then
-        ALLOW_MATUGEN_CACHE=1 generate_colors "$wallpaper"
     fi
 }
 
