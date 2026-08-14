@@ -84,6 +84,16 @@ post_hook   = '''
   hyprctl reload config-only || :
 '''
 
+[templates.theme_notify]
+input_path  = '~/.config/matugen/templates/theme-notify.sh'
+output_path = '~/.config/matugen/generated/theme-notify.sh'
+post_hook   = '''
+  # Palette popup defined right after the hyprland hook so it fires as soon as
+  # matugen renders the first templates - it only needs generated/theme-notify.sh,
+  # so it no longer waits for the GTK/cursor/terminal reloads further down.
+  bash ~/.config/matugen/generated/theme-notify.sh || :
+'''
+
 [templates.hyprlock]
 input_path  = '~/.config/matugen/templates/hyprlock-colors.conf'
 output_path = '~/.config/matugen/generated/hyprlock-colors.conf'
@@ -370,16 +380,21 @@ post_hook   = '''
 input_path  = '/dev/null'
 output_path = '/dev/null'
 post_hook   = '''
-  CURSOR_PRIMARY="{{colors.primary.default.hex}}" \
-  CURSOR_OUTLINE="{{colors.outline.default.hex}}" \
-  CURSOR_ERROR="{{colors.error.default.hex}}" \
-  CURSOR_TERTIARY="{{colors.tertiary.default.hex}}" \
-  CURSOR_SECONDARY="{{colors.secondary.default.hex}}" \
-  CURSOR_SECONDARY_CONTAINER="{{colors.secondary_container.default.hex}}" \
-  CURSOR_ON_SURFACE="{{colors.on_surface.default.hex}}" \
-  CURSOR_ON_SURFACE_VARIANT="{{colors.on_surface_variant.default.hex}}" \
-  CURSOR_ON_PRIMARY_CONTAINER="{{colors.on_primary_container.default.hex}}" \
-  bash "$HOME/user_scripts/theme_matugen/cursor_recolor.sh" || :
+  # Cursor recolor is the slowest hook (SVG -> .hlc/xcursor compile) and is
+  # independent of every other reload: run it in the background so the popup,
+  # GTK and terminal hooks below never wait on it. cursor_recolor.sh is
+  # guarded by a flock + color stamp, so a queued run from a rapid second
+  # theme change just exits (newest colors win).
+  ( CURSOR_PRIMARY="{{colors.primary.default.hex}}" \
+    CURSOR_OUTLINE="{{colors.outline.default.hex}}" \
+    CURSOR_ERROR="{{colors.error.default.hex}}" \
+    CURSOR_TERTIARY="{{colors.tertiary.default.hex}}" \
+    CURSOR_SECONDARY="{{colors.secondary.default.hex}}" \
+    CURSOR_SECONDARY_CONTAINER="{{colors.secondary_container.default.hex}}" \
+    CURSOR_ON_SURFACE="{{colors.on_surface.default.hex}}" \
+    CURSOR_ON_SURFACE_VARIANT="{{colors.on_surface_variant.default.hex}}" \
+    CURSOR_ON_PRIMARY_CONTAINER="{{colors.on_primary_container.default.hex}}" \
+    bash "$HOME/user_scripts/theme_matugen/cursor_recolor.sh" ) &
 '''
 
 
@@ -438,15 +453,9 @@ post_hook   = '''
   # bounce MUST pause between the two sets: two rapid gsettings writes are
   # coalesced by GTK into a single no-op, and file managers like Thunar
   # would keep rendering the old folder colors (verified live via grim).
+  # The bounce is async: the 0.5s pause is required, but nothing may wait on it.
   gsettings set org.gnome.desktop.interface gtk-theme "$NAME" 2>/dev/null || :
-  gsettings set org.gnome.desktop.interface icon-theme 'Adwaita' 2>/dev/null || :
-  sleep 0.5
-  gsettings set org.gnome.desktop.interface icon-theme 'Papirus' 2>/dev/null || :
-'''
-
-[templates.theme_notify]
-input_path  = '~/.config/matugen/templates/theme-notify.sh'
-output_path = '~/.config/matugen/generated/theme-notify.sh'
-post_hook   = '''
-  bash ~/.config/matugen/generated/theme-notify.sh || :
+  ( gsettings set org.gnome.desktop.interface icon-theme 'Adwaita' 2>/dev/null || :
+    sleep 0.5
+    gsettings set org.gnome.desktop.interface icon-theme 'Papirus' 2>/dev/null || : ) &
 '''

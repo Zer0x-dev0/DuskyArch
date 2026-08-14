@@ -873,13 +873,15 @@ sweep_profiles() {
     # Fire-and-forget: pre-warm other schemes in the background so the active
     # theme change is never blocked. 99>&- releases the run lock immediately,
     # so a following theme_ctl invocation never waits on these matugen jobs.
+    # nice+ionice: these warm-ups must never compete with the interactive
+    # desktop right after a theme change (CPU-heavy matugen on 4GB/5-core).
     for scheme in "${active_schemes[@]}"; do
         [[ "$scheme" == "$MATUGEN_TYPE" ]] && continue
         {
             if [[ "$mode" == "image" ]]; then
-                matugen -q -c "${PROFILE_CONFIGS_DIR}/${scheme}.toml" -t "$scheme" "${base[@]}" image "$source"
+                nice -n 10 ionice -c 3 matugen -q -c "${PROFILE_CONFIGS_DIR}/${scheme}.toml" -t "$scheme" "${base[@]}" image "$source"
             else
-                matugen -q -c "${PROFILE_CONFIGS_DIR}/${scheme}.toml" -t "$scheme" "${base[@]}" color hex "$source"
+                nice -n 10 ionice -c 3 matugen -q -c "${PROFILE_CONFIGS_DIR}/${scheme}.toml" -t "$scheme" "${base[@]}" color hex "$source"
             fi
         } >/dev/null 2>&1 99>&- &
     done
@@ -893,18 +895,22 @@ sweep_profiles() {
 }
 
 # Re-fire every app reload hook after a cached profile swap (no matugen run).
-# Also fires the theme-notify palette popup and the cursor recolor that
-# matugen's own post_hooks would normally trigger, so both still happen on
-# cache hits (cursor_recolor falls back to the restored generated/colors.css).
+# Order matters for perceived speed:
+#   1. theme-notify palette popup first - it only needs generated/theme-notify.sh,
+#      so it appears immediately instead of waiting for the reload cascade.
+#   2. app reload hooks (hyprland, waybar, mako, terminals, GTK).
+#   3. cursor recolor last AND backgrounded - it is the slowest hook (SVG ->
+#      .hlc/xcursor compile) and independent of everything above. Its flock +
+#      color stamp make a queued run from a rapid second change exit instantly.
 run_apply_hooks() {
     [[ -f "$APPLY_HOOKS_SH" ]] || { warn "Apply hooks script missing; skipping app reloads."; return 0; }
     log "Re-applying active theme to apps..."
-    bash "$APPLY_HOOKS_SH" || warn "Some app hooks reported errors."
     if [[ -f "${GENERATED_DIR}/theme-notify.sh" ]]; then
         bash "${GENERATED_DIR}/theme-notify.sh" >/dev/null 2>&1 || :
     fi
+    bash "$APPLY_HOOKS_SH" || warn "Some app hooks reported errors."
     if [[ -f "$CURSOR_RECOLOR_SH" ]]; then
-        bash "$CURSOR_RECOLOR_SH" >/dev/null 2>&1 || warn "Cursor recolor hook reported errors."
+        ( bash "$CURSOR_RECOLOR_SH" >/dev/null 2>&1 || warn "Cursor recolor hook reported errors." ) &
     fi
 }
 
