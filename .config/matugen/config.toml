@@ -183,13 +183,9 @@ post_hook   = '''
   # Nuclear is a flatpak (aarch64: no AUR/native builds), so its theme dir is
   # under the sandboxed ~/.var/app. Plain copy: a symlink would point outside
   # the app's granted filesystem view and fail inside the sandbox.
-  # The mute pass desaturates the matugen primary/ring so the loud wallpaper
-  # colors stay readable on Nuclear's large accent surfaces (selected rows,
-  # buttons, progress). Run in background to avoid blocking matugen (theme
-  # applies async but faster UX); Nuclear re-reads themes at startup.
+  # Fixed Spotify-style palette (no matugen tokens); Nuclear re-reads themes
+  # at startup. Run in background to avoid blocking matugen.
   ( cp -f "$HOME/.config/matugen/generated/nuclear-theme.json" \
-         "$HOME/.var/app/com.nuclearplayer.Nuclear/data/com.nuclearplayer/themes/dusky.json" \
-     && python3 "$HOME/user_scripts/theme_matugen/nuclear_mute.py" \
          "$HOME/.var/app/com.nuclearplayer.Nuclear/data/com.nuclearplayer/themes/dusky.json" ) &
 '''
 
