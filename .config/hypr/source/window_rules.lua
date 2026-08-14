@@ -85,19 +85,6 @@ hl.window_rule({
     keep_aspect_ratio = true  -- Locks the window frame to the video's aspect ratio
 })
 
---- Spotube: Always Float with a Comfortable Size ---
--- Rationale: When tiled alongside other windows, Spotube gets squeezed into a
--- cramped tile where album art/text overlap and clicks land on the wrong track.
--- Floating it at a fixed size keeps rows clickable and the layout breathable.
-hl.window_rule({
-    name = "float-spotube",
-    match = { class = "^(spotube|Spotube)$" },
-    float = true,
-    center = true,
-    size = {1000, 700},      -- Roomy default so lists don't bunch up
-    opaque = true
-})
-
 -- wine/proton without plasma-workspace for tray icon
 hl.window_rule({
     name = "xembedsniproxy",
@@ -547,6 +534,14 @@ hl.window_rule({
   match = { class = "^(thunar|Thunar)$" },
   no_blur = false,
   opacity = "0.9 override 0.9 override",
+})
+
+--- Nuclear glassy mode ---
+hl.window_rule({
+  name = "nuclear_glassy",
+  match = { class = "^(nuclear-music-player)$" },
+  no_blur = false,
+  opacity = "0.95 override 0.95 override",
 })
 
 --- Kitty (match global 0.85 opacity) ---

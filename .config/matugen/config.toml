@@ -166,6 +166,17 @@ post_hook   = '''
   pkill -SIGUSR1 -x kitty || :
 '''
 
+[templates.nuclear]
+input_path  = '~/.config/matugen/templates/nuclear-theme.json'
+output_path = '~/.config/matugen/generated/nuclear-theme.json'
+post_hook   = '''
+  # Nuclear is a flatpak (aarch64: no AUR/native builds), so its theme dir is
+  # under the sandboxed ~/.var/app. Plain copy: a symlink would point outside
+  # the app's granted filesystem view and fail inside the sandbox.
+  cp -f "$HOME/.config/matugen/generated/nuclear-theme.json" \
+        "$HOME/.var/app/com.nuclearplayer.Nuclear/data/com.nuclearplayer/themes/dusky.json"
+'''
+
 # [templates.vscode]
 # input_path  = '~/.config/matugen/templates/vscode.json'
 # output_path = '~/.config/matugen/generated/vscode.json'

@@ -379,11 +379,11 @@ hl.bind(
     { description = "Hyprland Animation Rofi Menu" }
 )
 
--- --- Special Workspace (Spotify) ---
+-- --- Special Workspace (Nuclear) ---
 hl.bind(
     "SUPER + SHIFT + M",
-    hl.dsp.exec_cmd(dusky_scripts .. "spotube/spotube_toggle.sh"),
-    { description = "Special Workspace for Spotify" }
+    hl.dsp.exec_cmd(dusky_scripts .. "nuclear/nuclear_toggle.sh"),
+    { description = "Special Workspace for Nuclear" }
 )
 
 
