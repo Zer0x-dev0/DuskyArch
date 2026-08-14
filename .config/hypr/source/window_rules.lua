@@ -536,12 +536,20 @@ hl.window_rule({
   opacity = "0.9 override 0.9 override",
 })
 
---- Nuclear glassy mode ---
+--- Nuclear glassy mode (Flatpak + native) ---
 hl.window_rule({
   name = "nuclear_glassy",
-  match = { class = "^(nuclear-music-player)$" },
+  match = { class = "^(nuclear-music-player|com\\.nuclearplayer\\.Nuclear)$" },
   no_blur = false,
-  opacity = "0.95 override 0.95 override",
+  opacity = "0.85 override 0.85 override",
+})
+
+--- Nuclear layer surface blur (if it creates one) ---
+hl.layer_rule({
+  name = "nuclear_blur_layer",
+  match = { namespace = "nuclear" },
+  blur = true,
+  ignore_alpha = 0.0
 })
 
 --- Kitty (match global 0.85 opacity) ---
