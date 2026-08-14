@@ -108,6 +108,7 @@ scripts = [
     # "U | 255_tldr_update.sh",
     "U | 260_nuclear.sh",
     "U | 265_mouse_button_reverse.sh",
+    "U | 270_zellij.sh",
     "U | 290_dusky_service_toggler.py",
     # "S | 295_initramfs_optimization.py",
     "U | 300_git_config.sh",
