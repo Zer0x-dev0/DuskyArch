@@ -26,10 +26,10 @@
 
     "border-width": "1px",
 
-    "shadow-color": "oklch(0% 0 0)",
+    "shadow-color": "oklch(0% 0 0 / 0.3)",
     "shadow-x": "0px",
-    "shadow-y": "0px",
-    "shadow-blur": "0px",
+    "shadow-y": "4px",
+    "shadow-blur": "12px",
 
     "radius-sm": "4px",
     "radius-md": "8px",
@@ -38,7 +38,7 @@
   "dark": {
     "background": "{{colors.surface.default.hex}}",
     "background-secondary": "{{colors.surface_container.default.hex}}",
-    "background-input": "{{colors.surface_container_high.default.hex}}",
+    "background-input": "{{colors.surface_container_highest.default.hex}}",
 
     "foreground": "{{colors.on_surface.default.hex}}",
     "foreground-secondary": "{{colors.on_surface_variant.default.hex}}",
@@ -46,8 +46,8 @@
 
     "primary": "{{colors.primary.default.hex}}",
 
-    "border": "{{colors.outline.default.hex}}",
-    "border-input": "{{colors.outline_variant.default.hex}}",
+    "border": "{{colors.outline_variant.default.hex}}",
+    "border-input": "{{colors.outline.default.hex}}",
     "ring": "{{colors.primary.default.hex}}",
 
     "accent-green": "oklch(79.05% 0.209 147.58)",
@@ -60,10 +60,10 @@
 
     "border-width": "1px",
 
-    "shadow-color": "oklch(0% 0 0)",
+    "shadow-color": "oklch(0% 0 0 / 0.5)",
     "shadow-x": "0px",
-    "shadow-y": "0px",
-    "shadow-blur": "0px",
+    "shadow-y": "8px",
+    "shadow-blur": "24px",
 
     "radius-sm": "4px",
     "radius-md": "8px",
