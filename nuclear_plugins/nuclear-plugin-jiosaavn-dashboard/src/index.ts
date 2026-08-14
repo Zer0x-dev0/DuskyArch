@@ -54,11 +54,17 @@ const languageRank = (lang: string | undefined): number => {
 const byLanguagePreference = <T extends { language?: string }>(a: T, b: T): number =>
   languageRank(a.language) - languageRank(b.language);
 
+const artistPairs = (rawNames: string | undefined, rawIds: string | undefined): { name: string; id: string }[] => {
+  const names = artistNames(rawNames);
+  const ids = (rawIds ?? '').split(',').map((n) => n.trim()).filter(Boolean);
+  return names.map((name, index) => ({ name, id: ids[index] ?? name }));
+};
+
 const toAlbumRef = (album: any): AlbumRef => ({
   title: album.title ?? 'Unknown',
-  artists: artistNames(album.primary_artists ?? album.artists?.[0]?.name).map((name) => ({
+  artists: artistPairs(album.primary_artists ?? album.artists?.[0]?.name, album.primary_artists_id).map(({ name, id }) => ({
     name,
-    source: { provider: DASHBOARD_PROVIDER_ID, id: name },
+    source: { provider: DASHBOARD_PROVIDER_ID, id },
   })),
   artwork: artwork(album.image),
   source: { provider: DASHBOARD_PROVIDER_ID, id: String(album.albumid ?? album.id ?? ''), url: album.perma_url },
@@ -73,7 +79,7 @@ const toPlaylistRef = (playlist: any): PlaylistRef => ({
 
 const toTrack = (song: any): Track => ({
   title: song.song ?? song.title ?? 'Unknown',
-  artists: artistNames(song.primary_artists ?? song.singers ?? 'Unknown Artist').map((name) => ({ name, roles: [] })),
+  artists: artistPairs(song.primary_artists ?? song.singers ?? 'Unknown Artist', song.primary_artists_id).map(({ name, id }) => ({ name, roles: [], source: { provider: DASHBOARD_PROVIDER_ID, id } })),
   durationMs: parseInt(song.duration ?? '0', 10) * 1000 || undefined,
   artwork: artwork(song.image, 'thumbnail'),
   source: { provider: DASHBOARD_PROVIDER_ID, id: String(song.id), url: song.perma_url },
@@ -157,6 +163,7 @@ const createDashboardProvider = (api: NuclearPluginAPI): DashboardProvider => {
     id: DASHBOARD_PROVIDER_ID,
     kind: 'dashboard',
     name: 'JioSaavn',
+    metadataProviderId: 'jiosaavn-metadata',
     capabilities: [
       'topTracks',
       'topAlbums',

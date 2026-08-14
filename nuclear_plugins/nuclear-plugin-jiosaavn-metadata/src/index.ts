@@ -44,13 +44,19 @@ const artwork = (url: string | undefined, purpose: 'cover' | 'thumbnail' | 'avat
 const artistNames = (raw: string | undefined): string[] =>
   (raw ?? '').split(/,| featuring /i).map((n) => n.trim()).filter(Boolean);
 
+const artistPairs = (rawNames: string | undefined, rawIds: string | undefined): { name: string; id: string }[] => {
+  const names = artistNames(rawNames);
+  const ids = (rawIds ?? '').split(',').map((n) => n.trim()).filter(Boolean);
+  return names.map((name, index) => ({ name, id: ids[index] ?? name }));
+};
+
 const artistCredits = (song: any) =>
-  artistNames(song.primary_artists ?? song.singers ?? 'Unknown Artist').map((name) => ({ name, roles: [] }));
+  artistPairs(song.primary_artists ?? song.singers ?? 'Unknown Artist', song.primary_artists_id).map(({ name, id }) => ({ name, roles: [], source: { provider: PROVIDER_ID, id } }));
 
 const artistRefs = (song: any): ArtistRef[] =>
-  artistNames(song.primary_artists ?? song.singers ?? 'Unknown Artist').map((name) => ({
+  artistPairs(song.primary_artists ?? song.singers ?? 'Unknown Artist', song.primary_artists_id).map(({ name, id }) => ({
     name,
-    source: { provider: PROVIDER_ID, id: name },
+    source: { provider: PROVIDER_ID, id },
   }));
 
 const toTrack = (song: any): Track => ({
@@ -73,9 +79,9 @@ const toTrackRef = (song: any): TrackRef => ({
 
 const toAlbumRef = (album: any): AlbumRef => ({
   title: album.title ?? album.name ?? 'Unknown',
-  artists: artistNames(album.primary_artists ?? album.artists?.[0]?.name).map((name) => ({
+  artists: artistPairs(album.primary_artists ?? album.artists?.[0]?.name, album.primary_artists_id).map(({ name, id }) => ({
     name,
-    source: { provider: PROVIDER_ID, id: name },
+    source: { provider: PROVIDER_ID, id },
   })),
   artwork: artwork(album.image),
   source: { provider: PROVIDER_ID, id: String(album.albumid ?? album.id ?? ''), url: album.perma_url },
