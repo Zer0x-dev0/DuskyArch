@@ -125,6 +125,7 @@ class DuskyState:
     enable_rust: bool = True
     enable_sched_ext: bool = True
     enable_thin_lto: bool = True
+    enable_zram_zstd: bool = True
 
     @classmethod
     def load(cls) -> DuskyState:
@@ -139,6 +140,7 @@ class DuskyState:
                         enable_rust=data.get("enable_rust", True),
                         enable_sched_ext=data.get("enable_sched_ext", True),
                         enable_thin_lto=data.get("enable_thin_lto", True),
+                        enable_zram_zstd=data.get("enable_zram_zstd", True),
                     )
             except Exception:
                 pass
@@ -154,6 +156,7 @@ class DuskyState:
                     "enable_rust": self.enable_rust,
                     "enable_sched_ext": self.enable_sched_ext,
                     "enable_thin_lto": self.enable_thin_lto,
+                    "enable_zram_zstd": self.enable_zram_zstd,
                 },
                 f,
                 indent=4,
@@ -507,12 +510,14 @@ def manage_dusky_state() -> None:
         config_color = "green" if state.use_imported_config else "yellow"
         llvm_status = "ENABLED (ThinLTO)" if state.prefer_llvm else "GCC DEFAULT"
         rust_status = "ENABLED" if state.enable_rust else "DISABLED"
+        zram_status = "ENABLED" if state.enable_zram_zstd else "DISABLED"
 
         info_text = (
             f"[bold white]Config Directory:[/bold white] {DUSKY_DIR}\n"
             f"[bold white]Auto-Import Config:[/bold white] [bold {config_color}]{config_status}[/bold {config_color}]\n"
             f"[bold white]LLVM/Clang Mode:[/bold white] [cyan]{llvm_status}[/cyan]\n"
             f"[bold white]Rust Kernel Support:[/bold white] [cyan]{rust_status}[/cyan]\n"
+            f"[bold white]ZRAM ZSTD/LZ4 Codecs:[/bold white] [cyan]{zram_status}[/cyan]\n"
             f"[dim]Backup Config:[/dim] {'Present' if DUSKY_SAVED_CONFIG.exists() else 'Missing'}\n"
         )
         console.print(
@@ -529,10 +534,11 @@ def manage_dusky_state() -> None:
         table.add_row("2.", "Toggle Config Auto-Import")
         table.add_row("3.", "Toggle LLVM/Clang Toolchain (ThinLTO)")
         table.add_row("4.", "Toggle Rust Kernel Abstractions")
-        table.add_row("5.", "Back to Main Menu")
+        table.add_row("5.", "Toggle ZRAM ZSTD/LZ4 Codecs")
+        table.add_row("6.", "Back to Main Menu")
         console.print(table)
 
-        choice = Prompt.ask("\n[bold cyan]Select[/bold cyan]", choices=["1", "2", "3", "4", "5"], default="5")
+        choice = Prompt.ask("\n[bold cyan]Select[/bold cyan]", choices=["1", "2", "3", "4", "5", "6"], default="6")
         if choice == "1":
             DUSKY_DIR.mkdir(parents=True, exist_ok=True)
             if export_active_config(DUSKY_SAVED_CONFIG):
@@ -557,6 +563,11 @@ def manage_dusky_state() -> None:
             state.enable_rust = not state.enable_rust
             state.save()
             console.print(f"\n[bold green]Rust kernel support set to {state.enable_rust}.[/bold green]")
+            Prompt.ask("\n[dim]Press Enter to continue...[/dim]")
+        elif choice == "5":
+            state.enable_zram_zstd = not state.enable_zram_zstd
+            state.save()
+            console.print(f"\n[bold green]ZRAM ZSTD/LZ4 codecs set to {state.enable_zram_zstd}.[/bold green]")
             Prompt.ask("\n[dim]Press Enter to continue...[/dim]")
         else:
             break
@@ -732,6 +743,18 @@ def compile_kernel() -> None:
             "-e", "MODULE_COMPRESS_ZSTD",
             "-e", "HZ_1000",
         ]
+
+        if state.enable_zram_zstd:
+            # The stock DuskyArch config hard-forces LZO (ZRAM_BACKEND_FORCE_LZO=y)
+            # which blocks every other codec at kconfig level. Disable it and pull
+            # in zstd/lz4/lz4hc + multi-comp so zram-generator "zstd(level=2)" works.
+            cfg_args.extend([
+                "-d", "ZRAM_BACKEND_FORCE_LZO",
+                "-e", "ZRAM_BACKEND_ZSTD",
+                "-e", "ZRAM_BACKEND_LZ4",
+                "-e", "ZRAM_BACKEND_LZ4HC",
+                "-e", "ZRAM_MULTI_COMP",
+            ])
 
         if use_llvm and state.enable_thin_lto:
             cfg_args.extend(["-e", "LTO_CLANG_THIN", "-d", "LTO_NONE"])
