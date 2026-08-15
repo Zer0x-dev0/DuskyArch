@@ -49,6 +49,7 @@ from rich import box
 from rich.align import Align
 from rich.console import Console
 from rich.live import Live
+from rich.markup import escape
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
@@ -321,7 +322,7 @@ def get_latest_kernel() -> tuple[str, str]:
                 return mainline
             raise ValueError("No stable or mainline release found in kernel.org JSON")
     except Exception as e:
-        console.print(f"[bold red]Fatal:[/bold red] kernel.org API failed: {e}")
+        console.print(f"[bold red]Fatal:[/bold red] kernel.org API failed: {escape(str(e))}")
         sys.exit(1)
 
 
@@ -337,7 +338,7 @@ def get_sha256_for_tarball(tarball_name: str) -> str | None:
                 if len(parts) == 2 and parts[1] == tarball_name:
                     return parts[0]
     except Exception as e:
-        console.print(f"[dim]Note: sha256sums.asc lookup skipped ({e})[/dim]")
+        console.print(f"[dim]Note: sha256sums.asc lookup skipped ({escape(str(e))})[/dim]")
     return None
 
 
@@ -434,7 +435,7 @@ def export_active_config(target_file: Path) -> bool:
                 shutil.copy(cand, target_file)
                 return True
     except Exception as e:
-        console.print(f"[dim]Config fallback export failed: {e}[/dim]")
+        console.print(f"[dim]Config fallback export failed: {escape(str(e))}[/dim]")
     return False
 
 
@@ -844,7 +845,7 @@ def compile_kernel() -> None:
                     clean = line.strip()
                     if not clean:
                         continue
-                    log_lines.append(clean)
+                    log_lines.append(escape(clean))
                     live.update(
                         Panel(
                             "\n".join(log_lines),
@@ -854,7 +855,6 @@ def compile_kernel() -> None:
                         )
                     )
                 process.stdout.close()
-            process.wait()
         except KeyboardInterrupt:
             console.print("\n[bold yellow]Compilation interrupted by user. Terminating process group...[/bold yellow]")
             try:
@@ -864,6 +864,8 @@ def compile_kernel() -> None:
             except Exception:
                 pass
             return
+        finally:
+            process.wait()
 
         if process.returncode != 0:
             console.print("\n[bold red]Fatal:[/bold red] Kernel compilation failed. Config preserved.")
@@ -895,12 +897,12 @@ def compile_kernel() -> None:
     except KeyboardInterrupt:
         console.print("\n[bold yellow]Interrupted.[/bold yellow]")
     except subprocess.CalledProcessError as e:
-        console.print(f"\n[bold red]Subprocess failed:[/bold red] {e}")
+        console.print(f"\n[bold red]Subprocess failed:[/bold red] {escape(str(e))}")
         if e.stderr:
             err = e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr
-            console.print(f"[dim]{err[-2000:]}[/dim]")
+            console.print(f"[dim]{escape(err[-2000:])}[/dim]")
     except Exception as e:
-        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        console.print(f"\n[bold red]Error:[/bold red] {escape(str(e))}")
 
 
 # --- Main Menu & CLI Routing ---
