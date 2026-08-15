@@ -20,9 +20,12 @@ readonly CONFIG_FILE="${CONFIG_DIR}/99-elite-zram.conf"
 readonly MOUNT_POINT="/mnt/zram1"
 
 # The formula pushed to zram-generator to be evaluated at *every boot*.
-# Shape: 1:1 up to 8192 MiB -> flat at 8192 MiB until 10192 MiB -> (ram - 2000 MiB) above that.
-readonly ZRAM_SIZE_EXPR='min(ram, 8192) + max(ram - 10192, 0)'
-readonly COMPRESSION_ALGORITHM='zstd'
+# Conservative ceilings: swap = half of RAM, scratch = quarter of RAM.
+readonly ZRAM_SIZE_EXPR='ram / 2'
+readonly ZRAM_SIZE1_EXPR='ram / 4'
+readonly ZRAM_RESIDENT_LIMIT_EXPR='ram / 4'
+# DuskyArch kernel zram supports only lzo-rle (CONFIG_ZRAM_BACKEND_ZSTD not set)
+readonly COMPRESSION_ALGORITHM='lzo-rle'
 readonly FS_OPTIONS='rw,nosuid,nodev,discard,X-mount.mode=1777'
 
 # ANSI Colors
@@ -85,12 +88,14 @@ main() {
 
 [zram0]
 zram-size = ${ZRAM_SIZE_EXPR}
+zram-resident-limit = ${ZRAM_RESIDENT_LIMIT_EXPR}
 compression-algorithm = ${COMPRESSION_ALGORITHM}
 swap-priority = 100
 options = discard
 
 [zram1]
-zram-size = ${ZRAM_SIZE_EXPR}
+zram-size = ${ZRAM_SIZE1_EXPR}
+zram-resident-limit = ${ZRAM_RESIDENT_LIMIT_EXPR}
 fs-type = ext2
 mount-point = ${MOUNT_POINT}
 compression-algorithm = ${COMPRESSION_ALGORITHM}

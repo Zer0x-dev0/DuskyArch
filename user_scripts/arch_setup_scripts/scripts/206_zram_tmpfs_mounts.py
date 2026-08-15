@@ -61,9 +61,10 @@ escalate_privileges()
 
 # --- Core Constants ---
 MOUNT_POINT = "/mnt/zram1"
-ZRAM_SIZE_EXPR = "ram"
-ZRAM_RESIDENT_LIMIT_EXPR = "ram * 4 / 5"
-COMPRESSION_ALGORITHM = "zstd(level=2)"
+ZRAM_SIZE_EXPR = "ram / 4"
+ZRAM_RESIDENT_LIMIT_EXPR = "ram / 4"
+# DuskyArch kernel only compiles the lzo-rle zram backend; zstd(level=2) silently fell back before.
+COMPRESSION_ALGORITHM = "lzo-rle"
 
 FS_OPTIONS = "rw,nosuid,nodev,discard,noatime,lazytime,X-mount.mode=1777"
 CMD_TIMEOUT = 15

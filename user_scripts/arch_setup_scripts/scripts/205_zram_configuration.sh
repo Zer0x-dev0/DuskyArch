@@ -73,10 +73,11 @@ readonly CONFIG_DIR="/etc/systemd/zram-generator.conf.d"
 readonly CONFIG_FILE="${CONFIG_DIR}/99-elite-zram.conf"
 
 readonly ZRAM_SWAP_DEV="/dev/zram0"
-readonly ZRAM_SIZE_EXPR="ram * 1.5"
-readonly ZRAM_RESIDENT_LIMIT_EXPR="ram * 0.5"
-# NATIVE RECOMPRESSION: zram-generator parses subsequent algorithms for recomp natively.
-readonly COMPRESSION_ALGORITHM="zstd(level=2)" 
+readonly ZRAM_SIZE_EXPR="ram / 2"
+readonly ZRAM_RESIDENT_LIMIT_EXPR="ram / 4"
+# The DuskyArch kernel ships with ONLY the lzo-rle backend compiled in
+# (CONFIG_ZRAM_BACKEND_ZSTD/LZ4 are not set) — zstd/lz4 would silently fall back.
+readonly COMPRESSION_ALGORITHM="lzo-rle" 
 
 
 readonly GENERATOR_BIN="/usr/lib/systemd/system-generators/zram-generator"
@@ -183,7 +184,7 @@ if systemctl is-active --quiet "$SWAP_UNIT"; then
     log_info "$SWAP_UNIT is currently active."
 fi
 
-log_success "Platinum ZRAM (Pure Multi-Algorithm ZSTD) swap architecture installed safely."
+log_success "ZRAM (lzo-rle) swap architecture installed safely."
 log_info "Reboot the system to apply the new memory topology natively."
 
 exit 0

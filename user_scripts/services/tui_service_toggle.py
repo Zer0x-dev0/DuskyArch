@@ -137,7 +137,7 @@ CORE_SYSTEM_DEFS = {
     ),
     "zram-recompress.timer": (
         "ZRAM 15M Cold Pages Compressor",
-        "Auto compresses cold pages in both zram0 and zram1 with zstd level 3 every 15 minutes to reclaim memory",
+        "Auto compresses cold pages in both zram0 and zram1 with lzo-rle every 15 minutes to reclaim memory",
     ),
     "dusky_boot_mem_reclaim.timer": (
         "1Min Boot Memory Reclaimer",

@@ -95,7 +95,7 @@ if "100" not in swapon_out:
     fail(f"zram0 swap priority is incorrect. Output:\n{swapon_out}")
 ok("/dev/zram0 swap is fully active with Priority 100.")
 
-verify_limit("zram0", 0.75)  # 3/4 Limit
+verify_limit("zram0", 0.25)  # 1/4 Limit
 
 # --- 4. Hybrid Mount Detection (zram1 / tmpfs) ---
 info("Interrogating /mnt/zram1 mount backend...")
@@ -114,7 +114,7 @@ if mount_source == "tmpfs":
 
 elif mount_source in ("/dev/zram1", "zram1"):
     ok(f"Backend dynamically resolved as: Ext4 ZRAM Block.")
-    verify_limit("zram1", 0.80)  # 4/5 Limit
+    verify_limit("zram1", 0.25)  # 1/4 Limit
     
     # Verify Ext4 Journal Annihilation
     dumpe2fs_out = run_cmd(["dumpe2fs", "-h", "/dev/zram1"])
@@ -139,8 +139,8 @@ for dev in ["zram0", "zram1"]:
     algo_path = Path(f"/sys/block/{dev}/comp_algorithm")
     if algo_path.exists():
         algo_data = algo_path.read_text().strip()
-        if "[zstd]" in algo_data:
-            ok(f"{dev} is running ZSTD natively.")
+        if "[lzo-rle]" in algo_data:
+            ok(f"{dev} is running LZO-RLE natively.")
         else:
             fail(f"{dev} is running incorrect compression algorithm: {algo_data}")
     else:

@@ -131,7 +131,7 @@ PROFILES: dict[str, Profile] = {
     "savings": Profile(
         key="savings",
         label="Strict Savings (<30 GB)",
-        blurb="Absolute minimum RAM footprint: aggressive zstd ZRAM, tight THP, high VFS pressure.",
+        blurb="Absolute minimum RAM footprint: aggressive lzo-rle ZRAM, tight THP, high VFS pressure.",
         swappiness=190,
         vfs_cache_pressure=200,
         watermark_scale_factor=50,
@@ -152,15 +152,15 @@ PROFILES: dict[str, Profile] = {
         khugepaged_pages_to_scan=4096,
         mthp_anon={64: "madvise", 128: "madvise", 2048: "madvise"},
         mthp_shmem=_SHMEM_MAP,
-        zram_size="ram",
-        zram_algorithm="zstd",
+        zram_size="ram / 2",
+        zram_algorithm="lzo-rle",
         journald_system_max="256M",
         journald_runtime_max="32M",
     ),
     "performance": Profile(
         key="performance",
         label="Max Performance (≥30 GB)",
-        blurb="Liberal RAM usage: lz4 latency, 64k/128k mTHP always-on, fat dirty cache, big net buffers.",
+        blurb="Liberal RAM usage: lzo-rle codec, 64k/128k mTHP always-on, fat dirty cache, big net buffers.",
         swappiness=150,
         vfs_cache_pressure=100,
         watermark_scale_factor=100,
@@ -181,8 +181,8 @@ PROFILES: dict[str, Profile] = {
         khugepaged_pages_to_scan=4096,
         mthp_anon={64: "always", 128: "always", 2048: "madvise"},
         mthp_shmem=_SHMEM_MAP,
-        zram_size="ram",
-        zram_algorithm="lz4",
+        zram_size="ram / 2",
+        zram_algorithm="lzo-rle",
         journald_system_max="1G",
         journald_runtime_max="128M",
     ),
@@ -398,6 +398,7 @@ def render_zram_conf(o: Options) -> str:
         f"# Managed by memtune — profile: {p.label}",
         "[zram0]",
         f"zram-size = {p.zram_size}",
+        "zram-resident-limit = ram / 4",
         f"compression-algorithm = {p.zram_algorithm}",
         f"swap-priority = {ZRAM_SWAP_PRIORITY}",
         "options = discard",
@@ -905,17 +906,18 @@ def wizard_flow(st: SystemState, o: Options) -> Options:
 
     step(2, total, "ZRAM Topology",
          "zram is a compressed RAM block device used as swap. Capacity is virtual: pages only\n"
-         "cost RAM once swapped, at ~2-3x compression. zstd = best ratio, lz4 = lowest latency.")
-    sizes = [("ram", "uncompressed capacity = 100% of RAM"),
-             ("ram / 2", "conservative ceiling"),
+         "cost RAM once swapped, at ~2-3x compression. The DuskyArch kernel ships only the\n"
+         "lzo-rle backend; zstd/lz4 need CONFIG_ZRAM_BACKEND_* rebuilt into the kernel.")
+    sizes = [("ram / 2", "conservative ceiling (swap = half of RAM)"),
+             ("ram", "uncompressed capacity = 100% of RAM"),
              ("min(ram, 16384)", "cap at 16 GiB")]
     p = dataclasses.replace(p, zram_size=sizes[choose("zram device size", sizes, 0)][0])
-    algos = [("zstd", "highest compression ratio — RAM savings"),
-             ("lz4", "fastest codec — lowest swap latency"),
-             ("lzo-rle", "legacy balanced fallback")]
+    algos = [("lzo-rle", "the only codec in the DuskyArch kernel — no silent fallback"),
+             ("zstd", "best ratio, but REQUIRES a kernel rebuild to enable"),
+             ("lz4", "lowest latency, but REQUIRES a kernel rebuild to enable")]
     p = dataclasses.replace(
         p, zram_algorithm=algos[choose("compression algorithm", algos,
-                                       0 if p.zram_algorithm == "zstd" else 1)][0])
+                                       0 if p.zram_algorithm == "lzo-rle" else 1)][0])
     if o.writeback_dev is None:
         print(f"\n  {C.BOLD}idle writeback{C.RST} {C.DIM}(flushes cold compressed pages to a raw "
               f"block device every 20 min; the device is OVERWRITTEN){C.RST}")
