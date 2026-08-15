@@ -3,7 +3,7 @@
 # Script Name: 160_zram_config.sh
 # Description: Configures base zram-generator for an Arch Linux installation.
 #              Perfectly aligned with user-space script 205. Primes the system 
-#              with Platinum Grade LZO-RLE swap on first boot.
+#              with multi-tier ZSTD swap on first boot.
 # Context:     Arch Linux Install (Chrooted Environment)
 # ==============================================================================
 
@@ -18,8 +18,9 @@ readonly CONFIG_FILE="${CONFIG_DIR}/99-elite-zram.conf"
 # Aligned perfectly with user-space script 205
 readonly ZRAM_SIZE_EXPR="ram / 2"
 readonly ZRAM_RESIDENT_LIMIT_EXPR="ram / 4"
-# DuskyArch kernel zram supports only lzo-rle (CONFIG_ZRAM_BACKEND_ZSTD not set)
-readonly COMPRESSION_ALGORITHM="lzo-rle"
+# ZSTD recompression (needs ZRAM_MULTI_COMP + ZRAM_BACKEND_ZSTD in the installed kernel);
+# kernels without it fall back to lzo-rle.
+readonly COMPRESSION_ALGORITHM="zstd(level=1) zstd(level=8) (type=idle)"
 
 readonly RED=$'\033[0;31m'
 readonly GREEN=$'\033[0;32m'

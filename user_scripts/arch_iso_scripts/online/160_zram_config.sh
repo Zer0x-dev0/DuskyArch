@@ -24,8 +24,9 @@ readonly MOUNT_POINT="/mnt/zram1"
 readonly ZRAM_SIZE_EXPR='ram / 2'
 readonly ZRAM_SIZE1_EXPR='ram / 4'
 readonly ZRAM_RESIDENT_LIMIT_EXPR='ram / 4'
-# DuskyArch kernel zram supports only lzo-rle (CONFIG_ZRAM_BACKEND_ZSTD not set)
-readonly COMPRESSION_ALGORITHM='lzo-rle'
+# ZSTD recompression (needs ZRAM_MULTI_COMP + ZRAM_BACKEND_ZSTD in the installed kernel);
+# kernels without it fall back to lzo-rle.
+readonly COMPRESSION_ALGORITHM='zstd(level=2)'
 readonly FS_OPTIONS='rw,nosuid,nodev,discard,X-mount.mode=1777'
 
 # ANSI Colors

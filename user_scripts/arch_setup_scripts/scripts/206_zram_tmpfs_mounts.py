@@ -63,8 +63,9 @@ escalate_privileges()
 MOUNT_POINT = "/mnt/zram1"
 ZRAM_SIZE_EXPR = "ram / 4"
 ZRAM_RESIDENT_LIMIT_EXPR = "ram / 4"
-# DuskyArch kernel only compiles the lzo-rle zram backend; zstd(level=2) silently fell back before.
-COMPRESSION_ALGORITHM = "lzo-rle"
+# ZSTD recompression requires ZRAM_MULTI_COMP + ZRAM_BACKEND_ZSTD, enabled by
+# dusky_kernal_compile.py (config manager option 5). Old kernels fall back to lzo-rle.
+COMPRESSION_ALGORITHM = "zstd(level=2)"
 
 FS_OPTIONS = "rw,nosuid,nodev,discard,noatime,lazytime,X-mount.mode=1777"
 CMD_TIMEOUT = 15

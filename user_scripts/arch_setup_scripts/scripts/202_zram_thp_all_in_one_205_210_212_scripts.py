@@ -153,7 +153,7 @@ PROFILES: dict[str, Profile] = {
         mthp_anon={64: "madvise", 128: "madvise", 2048: "madvise"},
         mthp_shmem=_SHMEM_MAP,
         zram_size="ram / 2",
-        zram_algorithm="lzo-rle",
+        zram_algorithm="zstd",
         journald_system_max="256M",
         journald_runtime_max="32M",
     ),
@@ -182,7 +182,7 @@ PROFILES: dict[str, Profile] = {
         mthp_anon={64: "always", 128: "always", 2048: "madvise"},
         mthp_shmem=_SHMEM_MAP,
         zram_size="ram / 2",
-        zram_algorithm="lzo-rle",
+        zram_algorithm="lz4",
         journald_system_max="1G",
         journald_runtime_max="128M",
     ),
@@ -906,18 +906,18 @@ def wizard_flow(st: SystemState, o: Options) -> Options:
 
     step(2, total, "ZRAM Topology",
          "zram is a compressed RAM block device used as swap. Capacity is virtual: pages only\n"
-         "cost RAM once swapped, at ~2-3x compression. The DuskyArch kernel ships only the\n"
-         "lzo-rle backend; zstd/lz4 need CONFIG_ZRAM_BACKEND_* rebuilt into the kernel.")
+         "cost RAM once swapped, at ~2-3x compression. The DuskyArch kernel build enables the\n"
+         "zstd/lz4 backends (config manager option 5); older kernels fall back to lzo-rle.")
     sizes = [("ram / 2", "conservative ceiling (swap = half of RAM)"),
              ("ram", "uncompressed capacity = 100% of RAM"),
              ("min(ram, 16384)", "cap at 16 GiB")]
     p = dataclasses.replace(p, zram_size=sizes[choose("zram device size", sizes, 0)][0])
-    algos = [("lzo-rle", "the only codec in the DuskyArch kernel — no silent fallback"),
-             ("zstd", "best ratio, but REQUIRES a kernel rebuild to enable"),
-             ("lz4", "lowest latency, but REQUIRES a kernel rebuild to enable")]
+    algos = [("zstd", "best ratio — supported since the kernel rebuild with zstd codecs"),
+             ("lzo-rle", "safe fallback — works on every kernel"),
+             ("lz4", "lowest latency — supported since the kernel rebuild with zstd codecs")]
     p = dataclasses.replace(
         p, zram_algorithm=algos[choose("compression algorithm", algos,
-                                       0 if p.zram_algorithm == "lzo-rle" else 1)][0])
+                                       0 if p.zram_algorithm == "zstd" else 1)][0])
     if o.writeback_dev is None:
         print(f"\n  {C.BOLD}idle writeback{C.RST} {C.DIM}(flushes cold compressed pages to a raw "
               f"block device every 20 min; the device is OVERWRITTEN){C.RST}")

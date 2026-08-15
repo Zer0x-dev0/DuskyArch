@@ -139,8 +139,8 @@ for dev in ["zram0", "zram1"]:
     algo_path = Path(f"/sys/block/{dev}/comp_algorithm")
     if algo_path.exists():
         algo_data = algo_path.read_text().strip()
-        if "[lzo-rle]" in algo_data:
-            ok(f"{dev} is running LZO-RLE natively.")
+        if "[zstd]" in algo_data:
+            ok(f"{dev} is running ZSTD natively.")
         else:
             fail(f"{dev} is running incorrect compression algorithm: {algo_data}")
     else:
