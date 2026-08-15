@@ -76,6 +76,52 @@ Note: After changing the `config.plist` file, please regenerate the
 `OpenCore.qcow2` file using the instructions (./OpenCore/README.md#notes)
 included in this repository.
 
+### Fix: VM opens as a small square window after every full shutdown
+
+Symptom: close the VM fully -> next boot starts at 1024x768 (small square
+window). Requires multiple restarts, flipping Display scaling between
+"Retina - Scaled" and "More Space" until the window is big again. The
+retina scaling dance is macOS failing to persist the display mode because
+OVMF/OpenCore both boot at the default 1024x768.
+
+Complete fix (apply all three, they must match):
+
+1. OpenCore resolution — `OpenCore/config.plist`:
+
+   ```diff
+                            <key>Resolution</key>
+   -                       <string>Max</string>
+   +                       <string>2880x1800</string>
+   ```
+
+   Then regenerate `OpenCore.qcow2` (see ./OpenCore/README.md#notes).
+
+2. OVMF firmware resolution — press ESC during the OVMF boot logo (before
+   the OpenCore boot screen):
+
+   ```
+   Device Manager -> OVMF Platform Configuration ->
+   Change Preferred Resolution for Next Boot -> 2880x1800
+   ```
+
+   Commit changes and exit. OVMF and OpenCore resolutions must be equal
+   (default is 1024x768 — that is the small square window).
+
+3. macOS (one-time): `Settings -> Displays` -> pick "More Space"
+   (2880x1800). After this it should persist across full shutdowns.
+
+Extra tips:
+
+- If macOS still misbehaves on Ventura+ after this, switch the QEMU video
+  device to `vmware-svga` (`-device vmware-svga` in the boot script /
+  `<model type='vmware-svga'/>` in the libvirt XML) — this fixed the
+  resolution problem before.
+- Host side: the Hyprland window rule `float_vm_viewer` in
+  `~/.config/hypr/source/window_rules.lua` used to force the virt-manager
+  window to a fixed `size = {1043, 634}` on every open, which made the
+  small window worse. The fixed size has been removed (float + center
+  kept) so the window keeps its size across VM restarts.
+
 ### GPU passthrough notes
 
 These steps will need to be adapted for your particular setup. A host machine

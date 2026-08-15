@@ -1657,8 +1657,7 @@ hl.window_rule({
         title = "^(.* on QEMU/KVM)$"
     },
     float = true,
-    center = true,
-    size = {1043, 634}
+    center = true
 })
 
 -- -----------------------------------------------------------------------------
