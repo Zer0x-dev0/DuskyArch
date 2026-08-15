@@ -802,7 +802,7 @@ def compile_kernel() -> None:
             with open("/proc/meminfo") as f:
                 mem_kb = int([l for l in f if l.startswith("MemTotal")][0].split()[1])
             ram_gb = mem_kb / 1024**2
-            capped = max(1, min(cores, ram_gb // 2 + 1))
+            capped = max(1, min(cores, int(ram_gb // 2 + 1)))
             if capped < cores:
                 console.print(
                     f"[bold yellow]::[/bold yellow] Capping build jobs {cores} -> {capped} "
