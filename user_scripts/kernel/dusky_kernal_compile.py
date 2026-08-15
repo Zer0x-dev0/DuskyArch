@@ -620,12 +620,17 @@ def compile_kernel() -> None:
     if count_db_modules() < 100:
         console.print(
             Panel(
-                f"[bold red]Hardware profile at {DB_FILE} is sparse (<100 drivers).[/bold red]\n"
-                "Please run option 1 (Init) and option 2 (Telemetry) to populate hardware database first.",
-                border_style="red",
+                f"[bold yellow]Hardware profile at {DB_FILE} is sparse (<100 drivers).[/bold yellow]\n"
+                "Headless/VMs often map fewer modules and are fine to proceed — LMC_KEEP prefixes\n"
+                "still protect USB/GPU/fs/net subsystems. Desktop users should run option 1 first.",
+                border_style="yellow",
             )
         )
-        return
+        if not Confirm.ask(
+            f"\n[bold yellow]Only {count_db_modules()} drivers mapped. Continue with localmodconfig pruning?[/bold yellow]",
+            default=False,
+        ):
+            return
 
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
     free_gb = shutil.disk_usage(str(BUILD_DIR)).free / (1024**3)
@@ -793,6 +798,19 @@ def compile_kernel() -> None:
         state.save()
 
         cores = os.cpu_count() or 4
+        try:
+            with open("/proc/meminfo") as f:
+                mem_kb = int([l for l in f if l.startswith("MemTotal")][0].split()[1])
+            ram_gb = mem_kb / 1024**2
+            capped = max(1, min(cores, ram_gb // 2 + 1))
+            if capped < cores:
+                console.print(
+                    f"[bold yellow]::[/bold yellow] Capping build jobs {cores} -> {capped} "
+                    f"(only {ram_gb:.1f} GiB RAM; prevents systemd-oomd swap kills)."
+                )
+                cores = capped
+        except Exception:
+            pass
         toolchain_name = "LLVM/Clang (ThinLTO)" if use_llvm else "GCC"
         console.print(f"\n[bold green]Building linux-{version}-dusky using {toolchain_name} with {cores} threads...[/bold green]\n")
 
