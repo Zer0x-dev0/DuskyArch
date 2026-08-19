@@ -118,7 +118,7 @@ if [[ "$(uname -m)" == "aarch64" ]]; then
 fi
 
 {
-    cat << EOF
+    cat << 'EOF'
 # /etc/pacman.conf
 # See the pacman.conf(5) manpage for option and repository directives
 [options]

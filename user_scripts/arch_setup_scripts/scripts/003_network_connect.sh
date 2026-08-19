@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# dusky_interactive=true
 #d: Connect to Wi-Fi and set up networking
 
 set -Eeuo pipefail

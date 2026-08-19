@@ -209,14 +209,22 @@ fi
 
 # --- INPUT ACCESS CHECK ---
 if ! current_session_has_input_access; then
-    if ! $INTERACTIVE; then
+    if [[ "$RUN_MODE" == "setup" ]]; then
+        printf "%b[SETUP]%b User '%s' is not in the 'input' group. Adding now...\n" "${C_YELLOW}" "${C_RESET}" "$USER"
+        if sudo usermod -aG input "$USER" 2>/dev/null; then
+            printf "%b[OK]%b Added '%s' to the 'input' group (takes effect after re-login).\n" "${C_GREEN}" "${C_RESET}" "$USER"
+        else
+            printf "%b[WARN]%b Could not add '%s' to the 'input' group. Run manually: sudo usermod -aG input %s\n" "${C_YELLOW}" "${C_RESET}" "$USER" "$USER"
+        fi
+    elif ! $INTERACTIVE; then
         notify_user "$NOT_SETUP_MSG"
         exit 1
+    else
+        printf "%b[CRITICAL]%b You are not in the 'input' group.\n" "${C_RED}" "${C_RESET}"
+        printf "Run: %bsudo usermod -aG input %s%b\n" "${C_CYAN}" "$USER" "${C_RESET}"
+        notify_user "Permission Denied. Run: sudo usermod -aG input $USER\nThen log out and log back in."
+        exit 1
     fi
-    printf "%b[CRITICAL]%b You are not in the 'input' group.\n" "${C_RED}" "${C_RESET}"
-    printf "Run: %bsudo usermod -aG input %s%b\n" "${C_CYAN}" "$USER" "${C_RESET}"
-    notify_user "Permission Denied. Run: sudo usermod -aG input $USER\nThen log out and log back in."
-    exit 1
 fi
 
 acquire_lock
@@ -226,7 +234,7 @@ deploy_config
 mkdir -p "$BASE_DIR" 2>/dev/null || true
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
-    if ! $INTERACTIVE; then
+    if [[ "$RUN_MODE" != "setup" ]] && ! $INTERACTIVE; then
         notify_user "$NOT_SETUP_MSG"
         exit 1
     fi
@@ -239,7 +247,7 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
 fi
 
 if [[ ! -f "$MARKER_FILE" ]]; then
-    if ! $INTERACTIVE; then
+    if [[ "$RUN_MODE" != "setup" ]] && ! $INTERACTIVE; then
         notify_user "$NOT_SETUP_MSG"
         exit 1
     fi

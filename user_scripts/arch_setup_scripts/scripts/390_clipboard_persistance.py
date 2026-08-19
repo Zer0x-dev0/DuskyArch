@@ -139,7 +139,10 @@ def del_ids(db,ids):
 def reload(db):
     log_i("Live-reloading clipboard daemons...")
     wp=shutil.which("wl-paste"); cb=_bin()
-    if not wp or not cb: log_e("wl-paste or cliphist not in PATH"); sys.exit(1)
+    if not wp or not cb:
+        log_w(f"wl-paste or cliphist not in PATH (unavailable on this platform?).")
+        log_w(f"Mode config written; daemons will start once cliphist and wl-clipboard are installed.")
+        return
     denv=env_for(db)
     
     ids_before=list_ids(db)

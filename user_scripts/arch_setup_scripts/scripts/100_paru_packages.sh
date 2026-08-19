@@ -175,6 +175,40 @@ aur_install_manual() {
   run_aur_cmd "${AUR_HELPER}" -S --needed -- "$@"
 }
 
+# On aarch64, some AUR PKGBUILDs are arch=('x86_64') only (e.g. wlogout) and
+# paru refuses them outright. Patch the PKGBUILD to add aarch64 and build
+# locally with makepkg. Only attempted when the normal install already failed.
+aur_arch_patch_build() {
+  local pkg=$1
+  local carch
+  carch=$(uname -m)
+  [[ "$carch" == "aarch64" ]] || return 1
+
+  local tmp
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/dusky-aur.XXXXXX")
+  if ! git clone -q "https://aur.archlinux.org/${pkg}.git" "${tmp}/${pkg}" 2>/dev/null; then
+    rm -rf "${tmp}"
+    return 1
+  fi
+
+  local pkgbuild="${tmp}/${pkg}/PKGBUILD"
+  if [[ ! -f "${pkgbuild}" ]] || grep -qE '^arch=\([^)]*(aarch64|any)' "${pkgbuild}"; then
+    rm -rf "${tmp}"
+    return 1
+  fi
+
+  log_warn "'${pkg}' PKGBUILD is x86_64-only. Patching arch and building locally..."
+  sed -i -E "s/^arch=\(([^)]*)\)/arch=('aarch64' \1)/" "${pkgbuild}"
+
+  (
+    cd "${tmp}/${pkg}" || exit 1
+    makepkg -si --noconfirm --skippgpcheck
+  )
+  local rc=$?
+  rm -rf "${tmp}"
+  return "${rc}"
+}
+
 is_installed() {
   local pkg=$1
   # Utilizes pacman -T to correctly respect provides=() and virtual packages
@@ -387,6 +421,12 @@ main() {
 
       if is_installed "${pkg}"; then
         log_success "${pkg} is installed despite a non-zero helper exit status."
+        break
+      fi
+
+      # ARM fallback: paru refused the package (likely x86_64-only PKGBUILD).
+      if (( attempt == 1 )) && aur_arch_patch_build "${pkg}"; then
+        log_success "Installed ${pkg} via patched local build."
         break
       fi
 
