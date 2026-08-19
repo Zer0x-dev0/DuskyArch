@@ -8,6 +8,7 @@ import stat
 import argparse
 import tempfile
 import subprocess
+import platform
 from pathlib import Path
 
 try:
@@ -136,12 +137,15 @@ def main():
     hooks.extend([
         "keyboard",
         "autodetect",
-        "microcode",
         "modconf",
         "kms",
         "sd-vconsole",
         "block"
     ])
+
+    # microcode hook is x86-only; on aarch64 it emits a spurious warning
+    if platform.machine() in ("x86_64", "i686", "i386", "i486", "i586"):
+        hooks.insert(hooks.index("autodetect") + 1, "microcode")
 
     # sd-encrypt must follow block so the drive is visible for decryption
     if is_luks:

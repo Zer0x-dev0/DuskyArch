@@ -97,7 +97,12 @@ if ask_next_step "Configure mkinitcpio (Dynamic Block/LUKS/BTRFS mapping)"; then
     
     # Modern systemd hook array. 'keyboard' must precede 'autodetect' to ensure
     # USB/external keyboards are included for early LUKS unlocking.
-    HOOKS_ARRAY="systemd keyboard autodetect microcode modconf kms sd-vconsole block"
+    # 'microcode' is x86-only; on aarch64 the hook emits a spurious warning.
+    HOOKS_ARRAY="systemd keyboard autodetect"
+    case "$(uname -m)" in
+        x86_64|i?86) HOOKS_ARRAY="${HOOKS_ARRAY} microcode" ;;
+    esac
+    HOOKS_ARRAY="${HOOKS_ARRAY} modconf kms sd-vconsole block"
 
     if [[ -n "$CRYPT_DEV" ]]; then
         log_info "LUKS encryption detected on root device. Injecting 'sd-encrypt'."

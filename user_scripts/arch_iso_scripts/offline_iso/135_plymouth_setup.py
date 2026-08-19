@@ -13,7 +13,7 @@ Fixes:
 Pipeline: Runs AFTER 120_mkinitcpio_optimizer (creates drop-in) and BEFORE 150_mkinitcpio_restore_and_generate
 """
 from __future__ import annotations
-import os, sys, re, shlex, base64, shutil, subprocess
+import os, sys, re, shlex, base64, shutil, subprocess, platform
 from pathlib import Path
 
 def _ensure_rich():
@@ -253,8 +253,10 @@ def patch_mkinitcpio():
     if not MKINITCPIO_DROPIN.exists():
         console.print(f"[yellow]WARN: {MKINITCPIO_DROPIN} not found, run 120 before 135[/yellow]")
         MKINITCPIO_DROPIN.parent.mkdir(parents=True, exist_ok=True)
+        # 'microcode' is x86-only; on aarch64 the hook emits a spurious warning
+        microcode = "microcode " if platform.machine().startswith(("x86_64", "i386", "i686", "i486", "i586")) else ""
         MKINITCPIO_DROPIN.write_text(
-            'MODULES=(btrfs)\nBINARIES=(/usr/bin/btrfs)\nHOOKS=(base systemd plymouth keyboard autodetect microcode modconf kms sd-vconsole sd-encrypt block filesystems)\nFILES=(/etc/vconsole.conf)\n'
+            f'MODULES=(btrfs)\nBINARIES=(/usr/bin/btrfs)\nHOOKS=(base systemd plymouth keyboard autodetect {microcode}modconf kms sd-vconsole sd-encrypt block filesystems)\nFILES=(/etc/vconsole.conf)\n'
         )
         console.print("[green]Created minimal drop-in with plymouth + vconsole.conf[/green]")
         return
@@ -262,7 +264,11 @@ def patch_mkinitcpio():
     text = MKINITCPIO_DROPIN.read_text()
 
     # Canonical order for Plymouth 26 + systemd + LUKS + BTRFS (latest gist + Arch Wiki)
-    canonical_order = ["base", "systemd", "plymouth", "keyboard", "autodetect", "microcode", "modconf", "kms", "sd-vconsole", "sd-encrypt", "block", "filesystems", "fsck"]
+    # 'microcode' is x86-only; on aarch64 the hook emits a spurious warning
+    canonical_order = ["base", "systemd", "plymouth", "keyboard", "autodetect"]
+    if platform.machine().startswith(("x86_64", "i386", "i686", "i486", "i586")):
+        canonical_order.append("microcode")
+    canonical_order += ["modconf", "kms", "sd-vconsole", "sd-encrypt", "block", "filesystems", "fsck"]
     deprecated = {"sd-plymouth", "plymouth-encrypt", "sd-plymouth-encrypt"}
 
     hooks_info = _parse_last_array(text, "HOOKS")
