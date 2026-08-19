@@ -4,6 +4,7 @@
 import subprocess
 import sys
 import logging
+import shutil
 from typing import NamedTuple, Iterator
 
 # Initialization of a rigorous diagnostic telemetry apparatus.
@@ -153,8 +154,35 @@ def instantiate_configuration_hegemony() -> None:
 
     logging.info("Total systemic hegemony achieved. The configuration paradigm is irrevocably calcified.")
 
+def ensure_mousepad() -> None:
+    """
+    Verifies the mousepad GSettings schema is available, installing mousepad
+    via the AUR helper if the earlier package step failed to deliver it.
+    """
+    schemas = subprocess.run(
+        ["gsettings", "list-schemas"], capture_output=True, text=True
+    ).stdout
+    if "org.xfce.mousepad" in schemas:
+        return
+
+    helper = "paru" if shutil.which("paru") else "yay" if shutil.which("yay") else ""
+    if not helper:
+        logging.critical("mousepad schema missing and no AUR helper (paru/yay) available.")
+        sys.exit(1)
+
+    logging.info("mousepad schema missing. Installing mousepad via %s...", helper)
+    try:
+        subprocess.run(
+            [helper, "-S", "--needed", "--noconfirm", "mousepad"],
+            check=True, capture_output=True, text=True
+        )
+    except subprocess.CalledProcessError as install_err:
+        logging.critical(f"Failed to install mousepad: {install_err.stderr.strip()}")
+        sys.exit(1)
+
 if __name__ == "__main__":
     try:
+        ensure_mousepad()
         instantiate_configuration_hegemony()
     except ExceptionGroup as eg:
         logging.critical(f"Operational mandate failed. The following localized insubordinations were cataloged:")

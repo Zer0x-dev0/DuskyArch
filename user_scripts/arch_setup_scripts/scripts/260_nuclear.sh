@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# dusky_interactive=true
 #d: Install Nuclear — open-source music client (Flatpak, no Premium, no ads)
 
 set -euo pipefail
@@ -76,6 +77,14 @@ remove_old_spotify() {
 }
 
 install_nuclear_flatpak() {
+    if ! command -v flatpak &>/dev/null; then
+        log_warn "flatpak not found. Installing it first..."
+        if ! "$AUR_HELPER" -S --needed --noconfirm flatpak; then
+            log_error "Failed to install flatpak."
+            exit 1
+        fi
+    fi
+
     log_info "Installing Nuclear via Flatpak (Flathub)..."
     
     # Ensure Flathub remote exists

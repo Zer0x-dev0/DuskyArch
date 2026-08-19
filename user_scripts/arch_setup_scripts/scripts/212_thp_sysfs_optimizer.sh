@@ -71,7 +71,8 @@ if [[ ! -d "$THP_BASE_DIR" ]]; then
     if (( DRY_RUN == 1 )); then
         log_warn "THP hardware directory ($THP_BASE_DIR) missing. Dry-run continuing..."
     else
-        die "THP is disabled or not compiled into this kernel. Nothing to optimize."
+        log_warn "THP is disabled or not compiled into this kernel. Nothing to optimize — skipping."
+        exit 0
     fi
 fi
 
