@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# dusky_interactive=true
 #d: Tune swappiness and VM policy for ZRAM
 
 set -euo pipefail
