@@ -107,13 +107,26 @@ install_nuclear_flatpak() {
 
 # --- Main Logic ---
 
-# 1. User Confirmation
-printf "${C_BOLD}${C_WARN}[?]${C_RESET} Do you want to install/update Nuclear? [y/N] "
-read -r response
+# 1. Mode Detection (--auto/--yes/-y skips the confirmation prompt;
+#    orchestrator profiles pass --auto so a closed stdin cannot abort the run)
+AUTO_MODE=false
+for arg in "$@"; do
+    case "$arg" in
+        --auto|--yes|-y) AUTO_MODE=true ;;
+    esac
+done
 
-if [[ "${response,,}" != "y" && "${response,,}" != "yes" ]]; then
-    log_info "Operation cancelled by user."
-    exit 0
+if [[ "$AUTO_MODE" == true ]]; then
+    log_info "Auto-mode: skipping confirmation prompt."
+else
+    # 1b. User Confirmation (EOF-safe: cancelled instead of crashing under set -e)
+    printf "${C_BOLD}${C_WARN}[?]${C_RESET} Do you want to install/update Nuclear? [y/N] "
+    read -r response || response=""
+
+    if [[ "${response,,}" != "y" && "${response,,}" != "yes" ]]; then
+        log_info "Operation cancelled by user."
+        exit 0
+    fi
 fi
 
 # 2. Environment Setup

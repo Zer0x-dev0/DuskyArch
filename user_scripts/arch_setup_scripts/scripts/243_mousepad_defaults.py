@@ -157,7 +157,11 @@ def instantiate_configuration_hegemony() -> None:
 def ensure_mousepad() -> None:
     """
     Verifies the mousepad GSettings schema is available, installing mousepad
-    via the AUR helper if the earlier package step failed to deliver it.
+    if the earlier package step failed to deliver it.
+
+    Install order matters on Arch Linux ARM: the distro repo ships a valid
+    aarch64 build, while some AUR PKGBUILDs are x86_64-only and fail with
+    "package architecture is not valid". Prefer pacman, fall back to AUR.
     """
     schemas = subprocess.run(
         ["gsettings", "list-schemas"], capture_output=True, text=True
@@ -165,12 +169,27 @@ def ensure_mousepad() -> None:
     if "org.xfce.mousepad" in schemas:
         return
 
+    sudo = shutil.which("sudo")
+    if sudo:
+        logging.info("mousepad schema missing. Installing mousepad via pacman (repo)...")
+        try:
+            subprocess.run(
+                [sudo, "-n", "pacman", "-S", "--needed", "--noconfirm", "mousepad"],
+                check=True, capture_output=True, text=True
+            )
+            return
+        except (subprocess.CalledProcessError, FileNotFoundError) as pacman_err:
+            logging.warning(
+                "pacman install failed (%s); falling back to AUR helper...",
+                getattr(pacman_err, "stderr", "").strip() if hasattr(pacman_err, "stderr") else pacman_err,
+            )
+
     helper = "paru" if shutil.which("paru") else "yay" if shutil.which("yay") else ""
     if not helper:
-        logging.critical("mousepad schema missing and no AUR helper (paru/yay) available.")
+        logging.critical("mousepad schema missing and no install method available (sudo -n pacman or paru/yay).")
         sys.exit(1)
 
-    logging.info("mousepad schema missing. Installing mousepad via %s...", helper)
+    logging.info("Installing mousepad via %s...", helper)
     try:
         subprocess.run(
             [helper, "-S", "--needed", "--noconfirm", "mousepad"],
