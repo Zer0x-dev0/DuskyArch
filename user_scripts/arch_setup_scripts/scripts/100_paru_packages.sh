@@ -175,6 +175,21 @@ aur_install_manual() {
   run_aur_cmd "${AUR_HELPER}" -S --needed -- "$@"
 }
 
+# Low-RAM guard: on small aarch64 boards an unconstrained compiler fan-out can
+# starve cc1plus/rustc mid-build (manifests as a "broken" C++ compiler in CMake).
+# Cap build jobs when the box cannot sustain full parallelism.
+cap_build_parallelism() {
+  local mem_total_kib
+  mem_total_kib=$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+
+  if (( mem_total_kib > 0 && mem_total_kib < 6 * 1024 * 1024 )); then
+    export MAKEFLAGS="-j2"
+    export CARGO_BUILD_JOBS=2
+    export CMAKE_BUILD_PARALLEL_LEVEL=2
+    log_info "Low memory detected ($((mem_total_kib / 1024)) MiB). Capped build jobs to 2."
+  fi
+}
+
 # On aarch64, some AUR PKGBUILDs are arch=('x86_64') only (e.g. wlogout) and
 # paru refuses them outright. Patch the PKGBUILD to add aarch64 and build
 # locally with makepkg. Only attempted when the normal install already failed.
@@ -200,11 +215,33 @@ aur_arch_patch_build() {
   log_warn "'${pkg}' PKGBUILD is x86_64-only. Patching arch and building locally..."
   sed -i -E "s/^arch=\(([^)]*)\)/arch=('aarch64' \1)/" "${pkgbuild}"
 
+  local pkgdir="${tmp}/${pkg}"
+
+  # Build only: 'makepkg -si' would let an internal bare sudo prompt for a
+  # password, which fails hard in non-TTY sessions once the cached ticket
+  # expires mid-run.
   (
-    cd "${tmp}/${pkg}" || exit 1
-    makepkg -si --noconfirm --skippgpcheck
+    cd "${pkgdir}" || exit 1
+    makepkg --noconfirm --skippgpcheck
   )
   local rc=$?
+
+  if (( rc == 0 )); then
+    local -a built=()
+    mapfile -t built < <(compgen -G '"${pkgdir}/"*.pkg.tar.zst')
+
+    if (( ${#built[@]} )); then
+      # Re-validate credentials immediately before escalating so a stale
+      # ticket surfaces here as a clean failure, not a sudo TTY error.
+      sudo -n -v 2>/dev/null || sudo -v || rc=1
+      (( rc == 0 )) && sudo -n pacman -U --noconfirm -- "${built[@]}"
+      rc=$?
+    else
+      log_err "'${pkg}' built but no package archive was found."
+      rc=1
+    fi
+  fi
+
   rm -rf "${tmp}"
   return "${rc}"
 }
@@ -324,6 +361,7 @@ print_summary() {
 # ------------------------------------------------------------------------------
 main() {
   preflight_checks
+  cap_build_parallelism
 
   log_task "Starting Autonomous Package Installation Sequence"
   log_info "Using AUR Helper: ${AUR_HELPER}"
