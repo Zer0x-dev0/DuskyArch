@@ -20,13 +20,14 @@ readonly CONFIG_FILE="${CONFIG_DIR}/99-elite-zram.conf"
 readonly MOUNT_POINT="/mnt/zram1"
 
 # The formula pushed to zram-generator to be evaluated at *every boot*.
-# Conservative ceilings: swap = half of RAM, scratch = quarter of RAM.
-readonly ZRAM_SIZE_EXPR='ram / 2'
+# swap = full RAM (compressed), scratch = quarter of RAM.
+readonly ZRAM_SIZE_EXPR='ram'
 readonly ZRAM_SIZE1_EXPR='ram / 4'
-readonly ZRAM_RESIDENT_LIMIT_EXPR='ram / 4'
-# ZSTD recompression (needs ZRAM_MULTI_COMP + ZRAM_BACKEND_ZSTD in the installed kernel);
-# kernels without it fall back to lzo-rle.
-readonly COMPRESSION_ALGORITHM='zstd(level=2)'
+# Stock aarch64 kernels only build the LZO zram backends, so zstd(level=*) is
+# silently ignored; lzo-rle is what actually runs until CONFIG_ZRAM_BACKEND_ZSTD ships.
+readonly ZRAM_RESIDENT_LIMIT_EXPR='ram / 3'
+readonly ZRAM_RESIDENT_LIMIT1_EXPR='ram / 4'
+readonly COMPRESSION_ALGORITHM='lzo-rle'
 readonly FS_OPTIONS='rw,nosuid,nodev,discard,X-mount.mode=1777'
 
 # ANSI Colors
@@ -96,7 +97,7 @@ options = discard
 
 [zram1]
 zram-size = ${ZRAM_SIZE1_EXPR}
-zram-resident-limit = ${ZRAM_RESIDENT_LIMIT_EXPR}
+zram-resident-limit = ${ZRAM_RESIDENT_LIMIT1_EXPR}
 fs-type = ext2
 mount-point = ${MOUNT_POINT}
 compression-algorithm = ${COMPRESSION_ALGORITHM}

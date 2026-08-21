@@ -73,11 +73,12 @@ readonly CONFIG_DIR="/etc/systemd/zram-generator.conf.d"
 readonly CONFIG_FILE="${CONFIG_DIR}/99-elite-zram.conf"
 
 readonly ZRAM_SWAP_DEV="/dev/zram0"
-readonly ZRAM_SIZE_EXPR="ram / 2"
-readonly ZRAM_RESIDENT_LIMIT_EXPR="ram / 4"
-# ZSTD recompression requires ZRAM_MULTI_COMP + ZRAM_BACKEND_ZSTD, both enabled by
-# dusky_kernal_compile.py (config manager option 5). Old kernels silently fall back to lzo-rle.
-readonly COMPRESSION_ALGORITHM="zstd(level=2)" 
+readonly ZRAM_SIZE_EXPR="ram"
+readonly ZRAM_RESIDENT_LIMIT_EXPR="ram / 3"
+# Stock aarch64 kernels only build the LZO zram backends, so zstd(level=*) is
+# silently ignored by zram-generator and lzo-rle is what actually runs.
+# Revisit zstd once CONFIG_ZRAM_BACKEND_ZSTD ships (dusky_kernal_compile.py).
+readonly COMPRESSION_ALGORITHM="lzo-rle"
 
 
 readonly GENERATOR_BIN="/usr/lib/systemd/system-generators/zram-generator"

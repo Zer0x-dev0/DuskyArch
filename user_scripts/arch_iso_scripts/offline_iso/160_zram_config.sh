@@ -16,11 +16,11 @@ readonly CONFIG_DIR="/etc/systemd/zram-generator.conf.d"
 readonly CONFIG_FILE="${CONFIG_DIR}/99-elite-zram.conf"
 
 # Aligned perfectly with user-space script 205
-readonly ZRAM_SIZE_EXPR="ram / 2"
-readonly ZRAM_RESIDENT_LIMIT_EXPR="ram / 4"
-# ZSTD recompression (needs ZRAM_MULTI_COMP + ZRAM_BACKEND_ZSTD in the installed kernel);
-# kernels without it fall back to lzo-rle.
-readonly COMPRESSION_ALGORITHM="zstd(level=1) zstd(level=8) (type=idle)"
+readonly ZRAM_SIZE_EXPR="ram"
+# Stock aarch64 kernels only build the LZO zram backends, so zstd(level=*) is
+# silently ignored; lzo-rle is what actually runs until CONFIG_ZRAM_BACKEND_ZSTD ships.
+readonly ZRAM_RESIDENT_LIMIT_EXPR="ram / 3"
+readonly COMPRESSION_ALGORITHM="lzo-rle"
 
 readonly RED=$'\033[0;31m'
 readonly GREEN=$'\033[0;32m'
