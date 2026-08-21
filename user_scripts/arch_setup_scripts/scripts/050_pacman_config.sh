@@ -41,13 +41,12 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 # --- 2. Argument Parsing ---
-AUTO_MODE=0
 REVERT_MODE=0
 
 for arg in "$@"; do
     case "${arg}" in
         --auto|auto)
-            AUTO_MODE=1
+            # Accepted for pipeline compatibility only; generation is non-interactive
             ;;
         --revert)
             REVERT_MODE=1
@@ -208,6 +207,10 @@ EOF
 EOF
 
 } > "${TMP_FILE}"
+
+# Quoted heredocs above suppress expansion; stamp the detected arch explicitly.
+# A literal '${PACMAN_ARCH}' in /etc/pacman.conf breaks every $arch mirrorlist URL (404).
+sed -i "s|^Architecture = .*|Architecture = ${PACMAN_ARCH}|" "${TMP_FILE}"
 
 # Ensure correct ownership and permissions before moving
 chmod 644 "${TMP_FILE}"
