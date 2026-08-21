@@ -263,13 +263,27 @@ is_supported_rel_path() {
   [[ ! $rel =~ (^|/)\.\.(/|$) ]] || return 1
 }
 
+is_video_file() {
+  local f="${1,,}"
+  case "$f" in
+    *.mp4|*.mkv|*.webm|*.mov|*.avi|*.m4v) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 find_wallpapers() {
   find "$WALLPAPER_DIR" -type f \
     \( -iname '*.jpg' \
     -o -iname '*.jpeg' \
     -o -iname '*.png' \
     -o -iname '*.webp' \
-    -o -iname '*.gif' \) \
+    -o -iname '*.gif' \
+    -o -iname '*.mp4' \
+    -o -iname '*.mkv' \
+    -o -iname '*.webm' \
+    -o -iname '*.mov' \
+    -o -iname '*.avi' \
+    -o -iname '*.m4v' \) \
     "$@"
 }
 
@@ -325,8 +339,34 @@ generate_thumb() {
 
   tmp=$(mktemp --tmpdir="$THUMB_DIR" --suffix=.png thumb.tmp.XXXXXX) || return 1
 
-  if output=$(nice -n 19 magick \
-    -limit thread 1 \
+  # Video: extract frame via ffmpeg, then resize with magick — optimized for low RAM
+  if is_video_file "$file"; then
+    local frame_tmp
+    frame_tmp=$(mktemp --tmpdir="$THUMB_DIR" --suffix=.jpg frame.tmp.XXXXXX) || return 1
+    # Input-seek (-ss before -i) + single thread = ~5x faster & lower RAM for large files
+    if output=$(ffmpeg -y -hide_banner -loglevel error -threads 1 -ss 0.5 -hwaccel auto -i "$file" -frames:v 1 -q:v 2 "$frame_tmp" 2>&1) || \
+       output=$(ffmpeg -y -hide_banner -loglevel error -threads 1 -ss 0.5 -i "$file" -frames:v 1 -q:v 2 "$frame_tmp" 2>&1); then
+      if output=$(nice -n 19 ionice -c 3 magick \
+        -limit thread 1 -limit memory 256MiB -limit map 256MiB \
+        "$frame_tmp" \
+        -auto-orient \
+        -strip \
+        -thumbnail "${THUMB_SIZE}x${THUMB_SIZE}^" \
+        -gravity center \
+        -extent "${THUMB_SIZE}x${THUMB_SIZE}" \
+        "$tmp" 2>&1); then
+        rm -f -- "$frame_tmp"
+        mv -f -- "$tmp" "$thumb"
+        return 0
+      fi
+    fi
+    rm -f -- "$frame_tmp" "$tmp"
+    log_output WARN "Thumbnail generation failed for video '$rel': " "$output"
+    return 1
+  fi
+
+  if output=$(nice -n 19 ionice -c 3 magick \
+    -limit thread 1 -limit memory 256MiB -limit map 256MiB \
     "$file" \
     -auto-orient \
     -strip \
@@ -348,7 +388,7 @@ generate_thumb_safe() {
 }
 
 export WALLPAPER_DIR THUMB_DIR THUMB_SIZE LOG_FILE PROGRESS_ACTIVE
-export -f log log_output is_supported_rel_path thumb_path generate_thumb generate_thumb_safe
+export -f log log_output is_supported_rel_path is_video_file thumb_path generate_thumb generate_thumb_safe
 
 cleanup_orphan_thumbs() {
   local -n rels_ref=$1
@@ -427,6 +467,45 @@ build_cache() {
     notify "No supported wallpapers found." "$WALLPAPER_DIR"
     log INFO "Only unsupported wallpaper names were found."
     return 1
+  fi
+
+  # ── Deduplicate logical wallpapers (gif + mp4 + optimized.mp4 triplicates)
+  # Without this, 4 logical wallpapers become 12 cache entries and
+  # `theme_ctl next` appears to set multiple at once / thrashes RAM.
+  if (( ${#valid_rels[@]} > 1 )); then
+    declare -A __best_rel=() __best_rank=()
+    local __rel __key __rank __lower
+    for __rel in "${valid_rels[@]}"; do
+      __lower="${__rel,,}"
+      __key="${__rel%.*}"
+      [[ "$__key" == *.optimized ]] && __key="${__key%.optimized}"
+      __key="${__key,,}"
+      case "$__lower" in
+        *.optimized.mp4) __rank=100 ;;
+        *.mp4)           __rank=90 ;;
+        *.mkv)           __rank=80 ;;
+        *.webm)          __rank=70 ;;
+        *.mov)           __rank=60 ;;
+        *.avi)           __rank=50 ;;
+        *.m4v)           __rank=40 ;;
+        *.jpg|*.jpeg|*.png|*.webp) __rank=30 ;;
+        *.gif)           __rank=10 ;;
+        *)               __rank=0 ;;
+      esac
+      if [[ -z "${__best_rank[$__key]:-}" ]] || (( __rank > __best_rank[$__key] )); then
+        __best_rel["$__key"]="$__rel"
+        __best_rank["$__key"]="$__rank"
+      fi
+    done
+    if (( ${#__best_rel[@]} != ${#valid_rels[@]} )); then
+      log INFO "Dedup: collapsed ${#valid_rels[@]} files to ${#__best_rel[@]} logical wallpapers (gif+mp4+optimized)"
+      mapfile -d '' valid_rels < <(printf '%s\0' "${__best_rel[@]}" | LC_ALL=C sort -z -V)
+      valid_files=()
+      for __rel in "${valid_rels[@]}"; do
+        valid_files+=("$WALLPAPER_DIR/$__rel")
+      done
+    fi
+    unset __best_rel __best_rank
   fi
 
   ((SHOW_PROGRESS)) && [[ -t 2 ]] && render_progress=1
@@ -652,6 +731,17 @@ cache_info_by_index() {
 
 get_active_wallpaper_filename() {
   local awww_out current_image
+
+  # Live wallpaper active: highlight the video file instead of stale awww image
+  local live_marker="$SETTINGS_DIR/dusky_theme/live_wall"
+  if [[ -f "$live_marker" ]]; then
+    local live_vid
+    live_vid=$(<"$live_marker")
+    if [[ -n "$live_vid" && -f "$live_vid" ]]; then
+      printf '%s\n' "${live_vid##*/}"
+      return 0
+    fi
+  fi
 
   # UWSM Wrap applied
   # FIX: Read the entire command output stream because `awww query` 
@@ -964,43 +1054,53 @@ apply_selection() {
   update_tracker "$selection"
   update_fav_state "$selection"
 
-  # Dynamically pull the user's configured animation state
-  get_animation_state
-
-  # Construct the precise awww command matching the wizard settings
-  local -a awww_cmd=(dusky-run -- awww img)
-  [[ -n "$CUR_T_TYPE" && "$CUR_T_TYPE" != "disable" ]] && awww_cmd+=(--transition-type "$CUR_T_TYPE")
-  [[ -n "$CUR_T_DUR"  && "$CUR_T_DUR"  != "disable" ]] && awww_cmd+=(--transition-duration "$CUR_T_DUR")
-  [[ -n "$CUR_T_FPS"  && "$CUR_T_FPS"  != "disable" ]] && awww_cmd+=(--transition-fps "$CUR_T_FPS")
-  [[ -n "$CUR_T_BEZ"  && "$CUR_T_BEZ"  != "disable" ]] && awww_cmd+=(--transition-bezier "$CUR_T_BEZ")
-  [[ -n "$CUR_T_ANG"  && "$CUR_T_ANG"  != "disable" ]] && awww_cmd+=(--transition-angle "$CUR_T_ANG")
-  [[ -n "$CUR_T_POS"  && "$CUR_T_POS"  != "disable" ]] && awww_cmd+=(--transition-pos "$CUR_T_POS")
-  
-  awww_cmd+=("$full_path")
-
-  if ! output=$("${awww_cmd[@]}" 2>&1); then
-    die "Failed to set wallpaper." "$output"
-  fi
-
-  [[ -n $output ]] && log_output INFO "awww: " "$output"
-
-  # If Alt+H was pressed, exit here before Matugen engages.
-  if [[ "$action" == "NO_REGEN" ]]; then
-    notify "Wallpaper Applied" "Skipped Matugen regeneration."
+  # Live wallpaper (video) — delegate entirely to theme_ctl which handles
+  # mpvpaper start + poster-frame matugen theming.
+  if is_video_file "$full_path"; then
+    if [[ ! -x "$THEME_CTL" ]]; then
+      die "Theme controller not found or not executable." "$THEME_CTL"
+    fi
+    if [[ "$action" == "NO_REGEN" ]]; then
+      log INFO "Live wallpaper (no-regen): $full_path"
+      if ! output=$("$THEME_CTL" set "$full_path" --no-regen 2>&1); then
+        die "Failed to set live wallpaper." "$output"
+      fi
+      [[ -n $output ]] && log_output INFO "theme_ctl: " "$output"
+      notify "Live Wallpaper Applied" "Skipped Matugen regeneration."
+      return 0
+    fi
+    log INFO "Live wallpaper: $full_path — starting mpvpaper + theming from poster frame"
+    notify "Live Wallpaper" "Starting video wallpaper..." "low" "2500"
+    if ! output=$("$THEME_CTL" set "$full_path" 2>&1); then
+      die "Failed to set live wallpaper." "$output"
+    fi
+    [[ -n $output ]] && log_output INFO "theme_ctl: " "$output"
+    notify "Live Wallpaper Applied" "${full_path##*/}"
     return 0
   fi
 
+  # Static wallpaper — delegate through theme_ctl for correct live-vs-static
+  # exclusivity (stops mpvpaper) and matugen. Direct `awww img + refresh`
+  # leaves both layers active and re-themes from stale live poster.
   if [[ ! -x "$THEME_CTL" ]]; then
     die "Theme controller not found or not executable." "$THEME_CTL"
   fi
 
-  log INFO "Triggering theme_ctl to synchronize Matugen..."
-  notify "Generating Theme" "Matugen is processing colors..." "low" "2500"
-  
-  if ! output=$("$THEME_CTL" refresh 2>&1); then
-    die "Failed to apply theme via theme_ctl." "$output"
+  if [[ "$action" == "NO_REGEN" ]]; then
+    log INFO "Static wallpaper (no-regen): $full_path"
+    if ! output=$("$THEME_CTL" set "$full_path" --no-regen 2>&1); then
+      die "Failed to set wallpaper." "$output"
+    fi
+    [[ -n $output ]] && log_output INFO "theme_ctl: " "$output"
+    notify "Wallpaper Applied" "Skipped Matugen regeneration."
+    return 0
   fi
 
+  log INFO "Static wallpaper: $full_path — applying via theme_ctl + matugen"
+  notify "Wallpaper Applied" "Processing theme..." "low" "2500"
+  if ! output=$("$THEME_CTL" set "$full_path" 2>&1); then
+    die "Failed to set wallpaper." "$output"
+  fi
   [[ -n $output ]] && log_output INFO "theme_ctl: " "$output"
 }
 

@@ -135,6 +135,7 @@ scripts = [
     # "U | 405_spicetify_matugen_setup.sh",
     "U | 410_waybar_swap_config.py --set waybar=15",
     "U | 415_mpv_setup.sh",
+    "U | 487_live_wallpaper_setup.sh --auto",
     "S | 430_btrfs_zstd_compression_stats.sh",
     "U | 434_wayclick_soundpacks_download.sh --auto",
     "U | 435_key_sound_wayclick_setup.sh --setup",

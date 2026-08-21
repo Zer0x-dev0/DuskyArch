@@ -82,6 +82,11 @@ MAGICK_BIN = shutil.which("magick") or "magick"
 THUMB_SIZE = 240
 RENDER_SIZE = 145
 IMAGE_EXTENSIONS = frozenset({'.jpg', '.jpeg', '.png', '.webp', '.gif'})
+VIDEO_EXTENSIONS = frozenset({'.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v'})
+ALL_WALLPAPER_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+
+def is_video_file(path_str: str) -> bool:
+    return Path(path_str).suffix.lower() in VIDEO_EXTENSIONS
 
 _NATURAL_SORT_RE = re.compile(r'(\d+)')
 
@@ -315,7 +320,7 @@ class CacheManager:
                         if is_dir:
                             dirs_to_visit.append(virtual_path)
                         elif is_file:
-                            if virtual_path.suffix.lower() in IMAGE_EXTENSIONS:
+                            if virtual_path.suffix.lower() in ALL_WALLPAPER_EXTENSIONS:
                                 try:
                                     rel = virtual_path.relative_to(WALLPAPER_DIR)
                                     wallpapers.append(str(rel))
@@ -329,6 +334,50 @@ class CacheManager:
 
         traverse_dir(WALLPAPER_DIR)
         wallpapers.sort(key=natural_keys)
+        # ── Deduplicate logical wallpapers (gif + mp4 + optimized.mp4 triplicates)
+        # Collapses each stem to its best variant to avoid "12 wallpapers at once"
+        # when cycling via keybinds. Priority: optimized.mp4 > mp4 > other video > image > gif
+        if len(wallpapers) > 1:
+            def _rank(p: str) -> int:
+                pl = p.lower()
+                if pl.endswith(".optimized.mp4"):
+                    return 100
+                if pl.endswith(".mp4"):
+                    return 90
+                if pl.endswith(".mkv"):
+                    return 80
+                if pl.endswith(".webm"):
+                    return 70
+                if pl.endswith(".mov"):
+                    return 60
+                if pl.endswith(".avi"):
+                    return 50
+                if pl.endswith(".m4v"):
+                    return 40
+                if pl.endswith((".jpg", ".jpeg", ".png", ".webp")):
+                    return 30
+                if pl.endswith(".gif"):
+                    return 10
+                return 0
+
+            def _stem_key(p: str) -> str:
+                # strip extension then optional .optimized, lowercase
+                base = p.rsplit(".", 1)[0] if "." in p else p
+                if base.lower().endswith(".optimized"):
+                    base = base[: -len(".optimized")]
+                return base.lower()
+
+            best = {}
+            best_rank = {}
+            for w in wallpapers:
+                k = _stem_key(w)
+                r = _rank(w)
+                if k not in best_rank or r > best_rank[k]:
+                    best[k] = w
+                    best_rank[k] = r
+            # If dedup actually collapsed, return sorted best values
+            if len(best) != len(wallpapers):
+                wallpapers = sorted(best.values(), key=natural_keys)
         return wallpapers
 
     @staticmethod
@@ -376,26 +425,59 @@ class CacheManager:
 
             tmp_thumb_path = thumb_path.with_suffix(f'.{uuid.uuid4().hex}.tmp.png')
 
-            # Safely escape characters that trigger Magick's internal parsers
-            escaped_path = str(full_path).replace('[', '\\[').replace(']', '\\]').replace('*', '\\*').replace('?', '\\?')
-            input_arg = f"{escaped_path}[0]"
+            # Video: extract poster frame via ffmpeg first
+            if full_path.suffix.lower() in VIDEO_EXTENSIONS:
+                frame_tmp = thumb_path.with_suffix(f'.{uuid.uuid4().hex}.frame.jpg')
+                try:
+                    subprocess.run([
+                        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                        "-ss", "0.5", "-i", str(full_path),
+                        "-frames:v", "1", "-q:v", "2",
+                        str(frame_tmp)
+                    ], check=True, capture_output=True, text=True, timeout=15)
+                    # Resize the extracted frame with magick
+                    subprocess.run([
+                        "nice", "-n", "19", MAGICK_BIN,
+                        "-limit", "thread", "1",
+                        "-limit", "memory", "256MiB",
+                        "-limit", "map", "512MiB",
+                        "-limit", "width", "16384",
+                        "-limit", "height", "16384",
+                        "-limit", "time", "14",
+                        str(frame_tmp), "-auto-orient", "-strip",
+                        "-thumbnail", f"{THUMB_SIZE}x{THUMB_SIZE}^",
+                        "-gravity", "center", "-extent", f"{THUMB_SIZE}x{THUMB_SIZE}",
+                        "(", "-size", f"{THUMB_SIZE}x{THUMB_SIZE}", "xc:none", "-fill", "white",
+                        "-draw", f"roundrectangle 0,0,{THUMB_SIZE - 1},{THUMB_SIZE - 1},24,24", ")",
+                        "-alpha", "set", "-compose", "DstIn", "-composite",
+                        str(tmp_thumb_path)
+                    ], check=True, capture_output=True, text=True, timeout=15)
+                finally:
+                    try:
+                        frame_tmp.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+            else:
+                # Safely escape characters that trigger Magick's internal parsers
+                escaped_path = str(full_path).replace('[', '\\[').replace(']', '\\]').replace('*', '\\*').replace('?', '\\?')
+                input_arg = f"{escaped_path}[0]"
 
-            subprocess.run([
-                "nice", "-n", "19", MAGICK_BIN, 
-                "-limit", "thread", "1",
-                "-limit", "memory", "256MiB",  # Prevent RAM exhaustion
-                "-limit", "map", "512MiB",     # Prevent map exhaustion
-                "-limit", "width", "16384",    # Prevent decompression dimension bombs
-                "-limit", "height", "16384",
-                "-limit", "time", "14",        # Allow Magick to safely abort right before subprocess SIGKILL
-                input_arg, "-auto-orient", "-strip",  
-                "-thumbnail", f"{THUMB_SIZE}x{THUMB_SIZE}^",
-                "-gravity", "center", "-extent", f"{THUMB_SIZE}x{THUMB_SIZE}",
-                "(", "-size", f"{THUMB_SIZE}x{THUMB_SIZE}", "xc:none", "-fill", "white",
-                "-draw", f"roundrectangle 0,0,{THUMB_SIZE - 1},{THUMB_SIZE - 1},24,24", ")",
-                "-alpha", "set", "-compose", "DstIn", "-composite",
-                str(tmp_thumb_path)
-            ], check=True, capture_output=True, text=True, timeout=15)
+                subprocess.run([
+                    "nice", "-n", "19", MAGICK_BIN, 
+                    "-limit", "thread", "1",
+                    "-limit", "memory", "256MiB",  # Prevent RAM exhaustion
+                    "-limit", "map", "512MiB",     # Prevent map exhaustion
+                    "-limit", "width", "16384",    # Prevent decompression dimension bombs
+                    "-limit", "height", "16384",
+                    "-limit", "time", "14",        # Allow Magick to safely abort right before subprocess SIGKILL
+                    input_arg, "-auto-orient", "-strip",  
+                    "-thumbnail", f"{THUMB_SIZE}x{THUMB_SIZE}^",
+                    "-gravity", "center", "-extent", f"{THUMB_SIZE}x{THUMB_SIZE}",
+                    "(", "-size", f"{THUMB_SIZE}x{THUMB_SIZE}", "xc:none", "-fill", "white",
+                    "-draw", f"roundrectangle 0,0,{THUMB_SIZE - 1},{THUMB_SIZE - 1},24,24", ")",
+                    "-alpha", "set", "-compose", "DstIn", "-composite",
+                    str(tmp_thumb_path)
+                ], check=True, capture_output=True, text=True, timeout=15)
 
             os.replace(tmp_thumb_path, thumb_path)
             
@@ -1299,8 +1381,18 @@ class WallpaperApp:
             self.flowbox.add(child)
             self.ui_children[rel_path] = child
 
-            if current_id and (rel_path == current_id or os.path.basename(rel_path) == current_id):
-                target_child = child
+            # Match stem for deduped triplicates (gif vs mp4 vs optimized)
+            if current_id:
+                def _stem(s: str) -> str:
+                    base = s.rsplit(".", 1)[0] if "." in s else s
+                    if base.lower().endswith(".optimized"):
+                        base = base[: -len(".optimized")]
+                    return base.lower()
+                cur_stem = _stem(current_id)
+                rel_stem = _stem(rel_path)
+                base_stem = _stem(os.path.basename(rel_path))
+                if rel_path == current_id or os.path.basename(rel_path) == current_id or rel_stem == cur_stem or base_stem == cur_stem:
+                    target_child = child
 
         if self.window:
             self.window.show_all()
@@ -1641,34 +1733,21 @@ class WallpaperApp:
         theme_mode = state.get('THEME_MODE', 'dark')
         self.update_trackers(rel_path, theme_mode)
 
-        awww_cmd = [AWWW_BIN, "img"]
-
-        def add_opt(key, flag):
-            val = state.get(key, 'disable')
-            if val and val != 'disable':
-                awww_cmd.extend([flag, val])
-
-        add_opt('AWWW_TRANS_TYPE', '--transition-type')
-        add_opt('AWWW_TRANS_DURATION', '--transition-duration')
-        add_opt('AWWW_TRANS_FPS', '--transition-fps')
-        add_opt('AWWW_TRANS_BEZIER', '--transition-bezier')
-        add_opt('AWWW_TRANS_ANGLE', '--transition-angle')
-        add_opt('AWWW_TRANS_POS', '--transition-pos')
-        awww_cmd.append(str(full_path))
-
+        # Delegate ALL wallpapers through theme_ctl — it handles live-vs-static
+        # mutual exclusion (kills mpvpaper when switching to image, clears
+        # awww when switching to video) and matugen. Bypassing it with direct
+        # `awww img + refresh` leaves both layers active (dual wallpaper bug)
+        # and causes `refresh` to re-theme from stale live poster.
         self.app.hold()
 
         def _exec_backend():
             success = False
             err_msg = ""
             try:
-                if not ensure_awww_daemon():
-                    raise RuntimeError("Failed to start awww-daemon background service.")
-                subprocess.run(awww_cmd, check=True, capture_output=True, text=True)
-                if regen:
-                    subprocess.run(
-                        [str(THEME_CTL), "refresh"], check=True, capture_output=True, text=True
-                    )
+                cmd = [str(THEME_CTL), "set", str(full_path)]
+                if not regen:
+                    cmd.append("--no-regen")
+                subprocess.run(cmd, check=True, capture_output=True, text=True)
                 success = True
             except subprocess.CalledProcessError as e:
                 err_msg = e.stderr.strip() if e.stderr else str(e)
@@ -1756,42 +1835,26 @@ def apply_fav_wallpaper(rel_path: str):
     atomic_write(track_file, f"{basename}\n")
     atomic_write(FAV_STATE_FILE, f"{basename}\n")
 
-    awww_cmd = [AWWW_BIN, "img"]
-    def add_opt(key, flag):
-        val = state.get(key, 'disable')
-        if val and val != 'disable':
-            awww_cmd.extend([flag, val])
-
-    add_opt('AWWW_TRANS_TYPE', '--transition-type')
-    add_opt('AWWW_TRANS_DURATION', '--transition-duration')
-    add_opt('AWWW_TRANS_FPS', '--transition-fps')
-    add_opt('AWWW_TRANS_BEZIER', '--transition-bezier')
-    add_opt('AWWW_TRANS_ANGLE', '--transition-angle')
-    add_opt('AWWW_TRANS_POS', '--transition-pos')
-    awww_cmd.append(str(full_path))
-
+    # All wallpapers via theme_ctl for correct live-vs-static exclusivity
     try:
-        if not ensure_awww_daemon():
-            raise RuntimeError("Failed to start awww-daemon background service.")
-        subprocess.run(awww_cmd, check=True, capture_output=True, text=True)
-        subprocess.run(
-            [str(THEME_CTL), "refresh"], check=True, capture_output=True, text=True
-        )
+        subprocess.run([str(THEME_CTL), "set", str(full_path)], check=True, capture_output=True, text=True)
+        is_vid = is_video_file(str(full_path))
+        label = "Favorite (Live)" if is_vid else "Favorite"
         subprocess.run([
-            "notify-send", "-a", "dusky-fav-wal", 
+            "notify-send", "-a", "dusky-fav-wal",
             "-h", "string:x-canonical-private-synchronous:fav-wal",
             "-i", "/usr/share/icons/Papirus/16x16/symbolic/emblems/emblem-favorite-symbolic.svg",
-            "Favorite", basename,
+            label, basename,
             "-u", "low", "-t", "1200"
         ])
     except Exception as e:
         err_msg = getattr(e, 'stderr', '').strip() if hasattr(e, 'stderr') and e.stderr else str(e)
         print(f"Backend execution failed: {err_msg}")
         subprocess.run([
-            "notify-send", "-a", "dusky-fav-wal", 
+            "notify-send", "-a", "dusky-fav-wal",
             "-h", "string:x-canonical-private-synchronous:fav-wal",
             "-i", "/usr/share/icons/Papirus/16x16/symbolic/emblems/emblem-favorite-symbolic.svg",
-            "Error", "Failed to apply wallpaper", 
+            "Error", "Failed to apply wallpaper",
             "-u", "critical"
         ])
 

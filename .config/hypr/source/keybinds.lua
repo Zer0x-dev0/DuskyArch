@@ -178,6 +178,24 @@ hl.bind(
     { description = "Cycle Fav Wallpaper" }
 )
 
+hl.bind(
+    "SUPER + ALT + apostrophe",
+    hl.dsp.exec_cmd(dusky_scripts .. "theme_matugen/live_wall_ctl.sh toggle-pause"),
+    { description = "Toggle Live Wallpaper Pause" }
+)
+
+hl.bind(
+    "SUPER + CTRL + apostrophe",
+    hl.dsp.exec_cmd(dusky_scripts .. "theme_matugen/live_wall_ctl.sh stop"),
+    { description = "Stop Live Wallpaper" }
+)
+
+hl.bind(
+    "SUPER + ALT + SHIFT + apostrophe",
+    hl.dsp.exec_cmd(dusky_scripts .. "theme_matugen/live_wall_ctl.sh toggle-sound"),
+    { description = "Toggle Live Wallpaper Sound" }
+)
+
 cond_bind(
     "ALT + 5",
     hl.dsp.exec_cmd(terminal .. " -e " .. dusky_scripts .. "drives/drive_manager.sh unlock browser"),

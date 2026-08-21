@@ -93,8 +93,16 @@ readonly DEFAULT_TRANS_ANGLE="30"
 readonly DEFAULT_TRANS_POS="center"
 readonly DEFAULT_TRANS_BEZIER=".54,0,.34,.99"
 
+# Live wallpaper defaults
+readonly DEFAULT_LIVE_WALL_SOUND="0"
+
 readonly DAEMON_POLL_INTERVAL=0.1
 readonly DAEMON_POLL_LIMIT=50
+
+# Live wallpaper paths (shared with live_wall_ctl.sh)
+readonly LIVE_WALL_MARKER="${STATE_DIR}/live_wall"
+readonly LIVE_WALL_POSTER_MARKER="${STATE_DIR}/live_wall_poster"
+readonly LIVE_WALL_CTL="${HOME}/user_scripts/theme_matugen/live_wall_ctl.sh"
 
 # --- STATE VARIABLES ---
 THEME_MODE=""
@@ -108,6 +116,7 @@ AWWW_TRANS_FPS=""
 AWWW_TRANS_BEZIER=""
 AWWW_TRANS_ANGLE=""
 AWWW_TRANS_POS=""
+LIVE_WALL_SOUND=""
 
 STATE_NEEDS_REWRITE=0
 
@@ -205,6 +214,55 @@ is_valid_pos() {
     return 1
 }
 
+# --- LIVE WALLPAPER HELPERS ---
+
+is_video_file() {
+    local f="${1,,}"
+    case "$f" in
+        *.mp4|*.mkv|*.webm|*.mov|*.avi|*.m4v) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+stop_live_wallpaper_if_active() {
+    if [[ -f "$LIVE_WALL_MARKER" ]] || pgrep -x mpvpaper >/dev/null 2>&1; then
+        log "Stopping active live wallpaper (switching to static)..."
+        if [[ -x "$LIVE_WALL_CTL" ]]; then
+            "$LIVE_WALL_CTL" stop --silent 2>/dev/null || true
+        else
+            pkill -x mpvpaper 2>/dev/null || true
+            rm -f -- "$LIVE_WALL_MARKER" "$LIVE_WALL_POSTER_MARKER" 2>/dev/null || true
+        fi
+    fi
+}
+
+poster_for_video_via_ctl() {
+    local video="$1"
+    if [[ -x "$LIVE_WALL_CTL" ]]; then
+        "$LIVE_WALL_CTL" poster "$video" 2>/dev/null
+    else
+        # Fallback: inline ffmpeg extraction
+        local hash poster tmp
+        hash=$(printf '%s' "$video" | sha256sum | cut -d' ' -f1)
+        poster="${HOME}/.cache/dusky-live-wall/posters/${hash}.jpg"
+        if [[ -f "$poster" && "$poster" -nt "$video" ]]; then
+            printf '%s\n' "$poster"
+            return 0
+        fi
+        mkdir -p -- "${poster%/*}"
+        tmp=$(mktemp --tmpdir="${poster%/*}" poster.XXXXXX.jpg)
+        if ffmpeg -y -hide_banner -loglevel error -ss 0.5 -i "$video" -frames:v 1 -q:v 2 \
+            -vf "scale=512:512:force_original_aspect_ratio=decrease" "$tmp" 2>/dev/null || \
+           ffmpeg -y -hide_banner -loglevel error -ss 0.5 -i "$video" -frames:v 1 -q:v 2 "$tmp" 2>/dev/null; then
+            mv -f -- "$tmp" "$poster"
+            printf '%s\n' "$poster"
+        else
+            rm -f -- "$tmp"
+            return 1
+        fi
+    fi
+}
+
 resolve_wallpaper_id() {
     local full_path="$1"
     local abs_path
@@ -263,6 +321,7 @@ read_state() {
     AWWW_TRANS_BEZIER="$DEFAULT_TRANS_BEZIER"
     AWWW_TRANS_ANGLE="$DEFAULT_TRANS_ANGLE"
     AWWW_TRANS_POS="$DEFAULT_TRANS_POS"
+    LIVE_WALL_SOUND="$DEFAULT_LIVE_WALL_SOUND"
     STATE_NEEDS_REWRITE=0
 
     local -A found_keys=()
@@ -295,7 +354,7 @@ read_state() {
         fi
 
         case "$key" in
-            THEME_MODE|MATUGEN_TYPE|MATUGEN_CONTRAST|SOURCE_COLOR_INDEX|BASE16_BACKEND|AWWW_TRANS_TYPE|AWWW_TRANS_DURATION|AWWW_TRANS_FPS|AWWW_TRANS_BEZIER|AWWW_TRANS_ANGLE|AWWW_TRANS_POS)
+            THEME_MODE|MATUGEN_TYPE|MATUGEN_CONTRAST|SOURCE_COLOR_INDEX|BASE16_BACKEND|AWWW_TRANS_TYPE|AWWW_TRANS_DURATION|AWWW_TRANS_FPS|AWWW_TRANS_BEZIER|AWWW_TRANS_ANGLE|AWWW_TRANS_POS|LIVE_WALL_SOUND)
                 printf -v "$key" "%s" "$value"
                 found_keys["$key"]=1
                 ;;
@@ -376,7 +435,13 @@ read_state() {
         STATE_NEEDS_REWRITE=1
     fi
 
-    local required=(THEME_MODE MATUGEN_TYPE MATUGEN_CONTRAST SOURCE_COLOR_INDEX BASE16_BACKEND AWWW_TRANS_TYPE AWWW_TRANS_DURATION AWWW_TRANS_FPS AWWW_TRANS_BEZIER AWWW_TRANS_ANGLE AWWW_TRANS_POS)
+    if [[ "$LIVE_WALL_SOUND" != "0" && "$LIVE_WALL_SOUND" != "1" ]]; then
+        warn "Invalid LIVE_WALL_SOUND. Resetting to ${DEFAULT_LIVE_WALL_SOUND}."
+        LIVE_WALL_SOUND="$DEFAULT_LIVE_WALL_SOUND"
+        STATE_NEEDS_REWRITE=1
+    fi
+
+    local required=(THEME_MODE MATUGEN_TYPE MATUGEN_CONTRAST SOURCE_COLOR_INDEX BASE16_BACKEND AWWW_TRANS_TYPE AWWW_TRANS_DURATION AWWW_TRANS_FPS AWWW_TRANS_BEZIER AWWW_TRANS_ANGLE AWWW_TRANS_POS LIVE_WALL_SOUND)
     for req in "${required[@]}"; do
         if [[ -z "${found_keys[$req]:-}" ]]; then
             STATE_NEEDS_REWRITE=1
@@ -398,6 +463,7 @@ write_state() {
         AWWW_TRANS_BEZIER
         AWWW_TRANS_ANGLE
         AWWW_TRANS_POS
+        LIVE_WALL_SOUND
     )
 
     local -A current_state=(
@@ -412,6 +478,7 @@ write_state() {
         [AWWW_TRANS_BEZIER]="$AWWW_TRANS_BEZIER"
         [AWWW_TRANS_ANGLE]="$AWWW_TRANS_ANGLE"
         [AWWW_TRANS_POS]="$AWWW_TRANS_POS"
+        [LIVE_WALL_SOUND]="$LIVE_WALL_SOUND"
     )
 
     ensure_dir "$STATE_DIR"
@@ -562,18 +629,56 @@ load_wallpapers() {
     if [[ "$recursive" == "1" ]]; then
         mapfile -d '' -t found < <(
             find "$root" -type f \
-                \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" -o -iname "*.gif" \) \
+                \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" -o -iname "*.gif" \
+                   -o -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.webm" -o -iname "*.mov" -o -iname "*.avi" -o -iname "*.m4v" \) \
                 -print0 | LC_ALL=C sort -z -V
         )
     else
         mapfile -d '' -t found < <(
             find "$root" -maxdepth 1 -type f \
-                \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" -o -iname "*.gif" \) \
+                \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" -o -iname "*.gif" \
+                   -o -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.webm" -o -iname "*.mov" -o -iname "*.avi" -o -iname "*.m4v" \) \
                 -print0 | LC_ALL=C sort -z -V
         )
     fi
 
     (( ${#found[@]} > 0 )) || return 1
+
+    # ── Deduplicate logical wallpapers ──
+    # Many users end up with triplicates per wallpaper after `optimize`:
+    #   foo.gif (16-26M), foo.mp4, foo.optimized.mp4
+    # Cycling through all three wastes RAM and feels like "12 wallpapers
+    # apply at once". Collapse to one best file per stem.
+    # Priority: optimized.mp4 > mp4 > other video > image > gif (lowest)
+    if (( ${#found[@]} > 1 )); then
+        declare -A _best_path=() _best_rank=()
+        local f key rank lower
+        for f in "${found[@]}"; do
+            lower="${f,,}"
+            # Strip extension then optional .optimized to get stem key
+            key="${f%.*}"
+            [[ "$key" == *.optimized ]] && key="${key%.optimized}"
+            key="${key,,}"
+            case "$lower" in
+                *.optimized.mp4) rank=100 ;;
+                *.mp4)           rank=90 ;;
+                *.mkv)           rank=80 ;;
+                *.webm)          rank=70 ;;
+                *.mov)           rank=60 ;;
+                *.avi)           rank=50 ;;
+                *.m4v)           rank=40 ;;
+                *.jpg|*.jpeg|*.png|*.webp) rank=30 ;;
+                *.gif)           rank=10 ;;
+                *)               rank=0 ;;
+            esac
+            if [[ -z "${_best_rank[$key]:-}" ]] || (( rank > _best_rank[$key] )); then
+                _best_path["$key"]="$f"
+                _best_rank["$key"]="$rank"
+            fi
+        done
+        # Rebuild found as sorted deduped list
+        mapfile -d '' -t found < <(printf '%s\0' "${_best_path[@]}" | LC_ALL=C sort -z -V)
+    fi
 
     out_paths_ref=("${found[@]}")
     for path in "${out_paths_ref[@]}"; do
@@ -606,8 +711,21 @@ select_wallpaper() {
     [[ -f "$track_file" ]] && last_id=$(<"$track_file")
 
     if [[ -n "$last_id" ]]; then
+        # Also match stem without extension/.optimized for deduped triplicates
+        # (e.g., tracker has Car_-_Imgur.gif but best is Car_-_Imgur.optimized.mp4)
+        local last_stem="${last_id%.*}"
+        [[ "$last_stem" == *.optimized ]] && last_stem="${last_stem%.optimized}"
+        last_stem="${last_stem,,}"
         for i in "${!wallpaper_ids[@]}"; do
-            if [[ "${wallpaper_ids[$i]}" == "$last_id" || "${wallpapers[$i]##*/}" == "$last_id" ]]; then
+            local cur_id="${wallpaper_ids[$i]}"
+            local cur_base="${wallpapers[$i]##*/}"
+            local cur_stem="${cur_id%.*}"
+            [[ "$cur_stem" == *.optimized ]] && cur_stem="${cur_stem%.optimized}"
+            cur_stem="${cur_stem,,}"
+            local cur_base_stem="${cur_base%.*}"
+            [[ "$cur_base_stem" == *.optimized ]] && cur_base_stem="${cur_base_stem%.optimized}"
+            cur_base_stem="${cur_base_stem,,}"
+            if [[ "$cur_id" == "$last_id" || "$cur_base" == "$last_id" || "$cur_stem" == "$last_stem" || "$cur_base_stem" == "$last_stem" ]]; then
                 current_index=$i
                 break
             fi
@@ -925,6 +1043,51 @@ apply_wallpaper_direct() {
 
     wallpaper_id=$(resolve_wallpaper_id "$img_path")
 
+    # Branch: live wallpaper (video) — mpvpaper + poster-frame theming
+    if is_video_file "$img_path"; then
+        log "Applying live wallpaper: ${img_path##*/} [Trans: ${AWWW_TRANS_TYPE}]"
+        update_wallpaper_tracker "$wallpaper_id"
+
+        # ── Mutual exclusion: hide awww image behind live video ──
+        # awww and mpvpaper both render at layer background; without this,
+        # awww keeps decoding the previous image/GIF underneath the video,
+        # wasting RAM/CPU and causing the "dual wallpaper" bug.
+        # Clearing to solid black is near-zero cost vs killing the daemon.
+        if pgrep -x awww-daemon >/dev/null 2>&1; then
+            awww clear 000000 2>/dev/null || true
+        fi
+
+        if (( do_regen )); then
+            # Start mpvpaper synchronously (holds theme_ctl lock) to prevent
+            # race where rapid keypresses spawn multiple concurrent mpvpapers
+            # (12-instance RAM freeze bug). Poster/matugen still run in
+            # background so video appears in ~0.35s while colors follow.
+            if [[ -x "$LIVE_WALL_CTL" ]]; then
+                "$LIVE_WALL_CTL" set "$img_path" 99>&- 2>&1 || warn "live_wall_ctl set failed for ${img_path##*/}"
+            else
+                warn "live_wall_ctl.sh missing; cannot start live wallpaper"
+            fi
+            (
+                local poster=""
+                poster=$(poster_for_video_via_ctl "$img_path" 2>/dev/null || true)
+                if [[ -n "$poster" && -f "$poster" ]]; then
+                    ALLOW_MATUGEN_CACHE=1 generate_colors "$poster"
+                else
+                    warn "Failed to extract poster for $img_path (theming skipped, video still playing)"
+                fi
+            ) 99>&- &
+        else
+            # No-regen: just switch the video, skip matugen
+            if [[ -x "$LIVE_WALL_CTL" ]]; then
+                "$LIVE_WALL_CTL" set "$img_path" 99>&- 2>&1 || warn "live_wall_ctl set failed for ${img_path##*/}"
+            fi
+        fi
+        return 0
+    fi
+
+    # Static image path — stop any active live wallpaper first
+    stop_live_wallpaper_if_active
+
     log "Applying selected wallpaper: ${img_path##*/} [Trans: ${AWWW_TRANS_TYPE}]"
 
     ensure_awww_running
@@ -952,7 +1115,7 @@ apply_wallpaper_direct() {
         # Run matugen in parallel (background) - colors update when ready
         (
             ALLOW_MATUGEN_CACHE=1 generate_colors "$img_path"
-        ) &
+        ) 99>&- &
     else
         "${awww_cmd[@]}" 99>&- || die "Failed to apply wallpaper with awww"
     fi
@@ -966,6 +1129,37 @@ apply_wallpaper_selection() {
     (( $# > 1 )) && do_regen=$2
 
     select_wallpaper "$strategy" wallpaper wallpaper_id || die "No wallpapers found in ${ACTIVE_THEME_DIR} or ${WALLPAPER_ROOT}"
+
+    # Branch: selected file is a video — live wallpaper path
+    if is_video_file "$wallpaper"; then
+        log "Selected (live): ${wallpaper##*/} [Trans: ${AWWW_TRANS_TYPE}]"
+        update_wallpaper_tracker "$wallpaper_id"
+        # ── Mutual exclusion: hide awww image behind live video ──
+        if pgrep -x awww-daemon >/dev/null 2>&1; then
+            awww clear 000000 2>/dev/null || true
+        fi
+        if (( do_regen )); then
+            # Synchronous mpvpaper start (see direct path for rationale)
+            if [[ -x "$LIVE_WALL_CTL" ]]; then
+                "$LIVE_WALL_CTL" set "$wallpaper" 99>&- 2>&1 || warn "live_wall_ctl set failed for ${wallpaper##*/}"
+            fi
+            (
+                local poster=""
+                poster=$(poster_for_video_via_ctl "$wallpaper" 2>/dev/null || true)
+                if [[ -n "$poster" && -f "$poster" ]]; then
+                    ALLOW_MATUGEN_CACHE=1 generate_colors "$poster"
+                else
+                    warn "Poster extraction failed for $wallpaper (video still playing)"
+                fi
+            ) 99>&- &
+        else
+            if [[ -x "$LIVE_WALL_CTL" ]]; then "$LIVE_WALL_CTL" set "$wallpaper" 99>&- 2>&1 || warn "live_wall_ctl set failed"; fi || true
+        fi
+        return 0
+    fi
+
+    # Static image — stop any active live wallpaper first
+    stop_live_wallpaper_if_active
 
     log "Selected: ${wallpaper##*/} [Trans: ${AWWW_TRANS_TYPE}]"
 
@@ -995,7 +1189,7 @@ apply_wallpaper_selection() {
         # Run matugen in parallel (background) - colors update when ready
         (
             ALLOW_MATUGEN_CACHE=1 generate_colors "$wallpaper"
-        ) &
+        ) 99>&- &
     else
         "${awww_cmd[@]}" 99>&- || die "Failed to apply wallpaper with awww"
     fi
@@ -1005,6 +1199,44 @@ apply_wallpaper_selection() {
 regenerate_current() {
     local query_output line current_wallpaper="" resolved_wallpaper rel_path
     local primary_store secondary_store
+
+    # Live wallpaper active? Theme from its poster frame instead of awww query.
+    if [[ -f "$LIVE_WALL_MARKER" ]]; then
+        local live_video live_poster
+        live_video=$(<"$LIVE_WALL_MARKER")
+        # live_poster marker is authoritative if present
+        if [[ -f "$LIVE_WALL_POSTER_MARKER" ]]; then
+            live_poster=$(<"$LIVE_WALL_POSTER_MARKER")
+            if [[ -f "$live_poster" ]]; then
+                log "Live wallpaper active: ${live_video##*/} — regenerating from poster"
+                # Restore mpvpaper if it died (e.g. after reboot / crash)
+                if ! pgrep -x mpvpaper >/dev/null 2>&1 && [[ -f "$live_video" ]] && [[ -x "$LIVE_WALL_CTL" ]]; then
+                    log "Restoring live wallpaper process for ${live_video##*/}"
+                    "$LIVE_WALL_CTL" set "$live_video" 99>&- 2>&1 || warn "live wallpaper restore failed"
+                fi
+                ALLOW_MATUGEN_CACHE=1 generate_colors "$live_poster"
+                return 0
+            fi
+        fi
+        # Fallback: derive poster from video path
+        if [[ -f "$live_video" ]] && is_video_file "$live_video"; then
+            local derived_poster
+            derived_poster=$(poster_for_video_via_ctl "$live_video" 2>/dev/null || true)
+            if [[ -n "$derived_poster" && -f "$derived_poster" ]]; then
+                log "Live wallpaper active: ${live_video##*/} — regenerating from poster (derived)"
+                if ! pgrep -x mpvpaper >/dev/null 2>&1 && [[ -x "$LIVE_WALL_CTL" ]]; then
+                    log "Restoring live wallpaper process for ${live_video##*/}"
+                    "$LIVE_WALL_CTL" set "$live_video" 99>&- 2>&1 || warn "live wallpaper restore failed"
+                fi
+                ALLOW_MATUGEN_CACHE=1 generate_colors "$derived_poster"
+                return 0
+            fi
+        fi
+        # Stale marker (video deleted) — clean up and fall through to normal path
+        warn "Stale live wallpaper marker (video missing): $live_video — clearing"
+        rm -f -- "$LIVE_WALL_MARKER" "$LIVE_WALL_POSTER_MARKER" 2>/dev/null || true
+        pkill -x mpvpaper 2>/dev/null || true
+    fi
 
     ensure_awww_running
 
@@ -1023,6 +1255,17 @@ regenerate_current() {
 
     current_wallpaper=$(trim_trailing "$current_wallpaper")
     [[ -n "$current_wallpaper" ]] || die "Could not determine current wallpaper from awww query"
+
+    # If the current awww image is itself a video path (edge case: user set video via awww directly)
+    if is_video_file "$current_wallpaper" && [[ -f "$current_wallpaper" ]]; then
+        local vp
+        vp=$(poster_for_video_via_ctl "$current_wallpaper" 2>/dev/null || true)
+        if [[ -n "$vp" && -f "$vp" ]]; then
+            log "Current wallpaper is a video: ${current_wallpaper##*/} — theming from poster"
+            ALLOW_MATUGEN_CACHE=1 generate_colors "$vp"
+            return 0
+        fi
+    fi
 
     resolved_wallpaper="$current_wallpaper"
 
@@ -1048,6 +1291,17 @@ regenerate_current() {
         warn "Current wallpaper '${current_wallpaper}' not found. Selecting a random wallpaper."
         random_command "$@"
         return 0
+    fi
+
+    # If resolved file is a video, theme from its poster
+    if is_video_file "$resolved_wallpaper"; then
+        local rp
+        rp=$(poster_for_video_via_ctl "$resolved_wallpaper" 2>/dev/null || true)
+        if [[ -n "$rp" && -f "$rp" ]]; then
+            log "Resolved wallpaper is a video: ${resolved_wallpaper##*/} — theming from poster"
+            ALLOW_MATUGEN_CACHE=1 generate_colors "$rp"
+            return 0
+        fi
     fi
 
     if [[ "$resolved_wallpaper" != "$current_wallpaper" ]]; then
@@ -1275,6 +1529,7 @@ cmd_set() {
                 AWWW_TRANS_BEZIER="$DEFAULT_TRANS_BEZIER"
                 AWWW_TRANS_ANGLE="$DEFAULT_TRANS_ANGLE"
                 AWWW_TRANS_POS="$DEFAULT_TRANS_POS"
+                LIVE_WALL_SOUND="$DEFAULT_LIVE_WALL_SOUND"
                 mode_request_kind="defaults"
                 shift
                 ;;
