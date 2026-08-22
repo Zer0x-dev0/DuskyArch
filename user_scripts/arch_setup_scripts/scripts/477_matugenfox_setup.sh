@@ -41,7 +41,8 @@ for cmd in curl python3; do
     command -v "$cmd" >/dev/null 2>&1 || { log_error "Missing required command: $cmd"; exit 1; }
 done
 
-# Resolve the real Firefox root (~/.mozilla may be a symlink to ~/.config/mozilla)
+# Resolve the real Firefox root — handle both ~/.mozilla and ~/.config/mozilla (XDG) layouts
+# Prefer the candidate that actually contains firefox profiles
 MOZ_ROOT=""
 for candidate in "${HOME}/.mozilla" "${HOME}/.config/mozilla"; do
     if [[ -d "$candidate" ]]; then
@@ -51,12 +52,28 @@ for candidate in "${HOME}/.mozilla" "${HOME}/.config/mozilla"; do
         if [[ -d "${resolved}/mozilla" ]]; then
             resolved=$(realpath "${resolved}/mozilla" 2>/dev/null || printf '%s' "${resolved}/mozilla")
         fi
-        if [[ -d "$resolved" ]]; then
-            MOZ_ROOT="$resolved"
-            break
+        if [[ -d "${resolved}/firefox" ]]; then
+            if compgen -G "${resolved}/firefox/*/prefs.js" > /dev/null 2>&1; then
+                MOZ_ROOT="$resolved"
+                break
+            fi
+            # Keep as fallback if it has firefox dir but no prefs yet
+            if [[ -z "$MOZ_ROOT" ]]; then
+                MOZ_ROOT="$resolved"
+            fi
         fi
     fi
 done
+
+# Fallback: if MOZ_ROOT doesn't have firefox, try the other layout explicitly
+if [[ -z "$MOZ_ROOT" || ! -d "${MOZ_ROOT}/firefox" ]]; then
+    for candidate in "${HOME}/.config/mozilla" "${HOME}/.mozilla"; do
+        if [[ -d "${candidate}/firefox" ]] && compgen -G "${candidate}/firefox/*/prefs.js" > /dev/null 2>&1; then
+            MOZ_ROOT=$(realpath "$candidate" 2>/dev/null || printf '%s' "$candidate")
+            break
+        fi
+    done
+fi
 
 if [[ -z "$MOZ_ROOT" ]]; then
     log_warn "No Mozilla profile root found. Skipping."
@@ -67,7 +84,7 @@ readonly MOZ_ROOT
 readonly FIREFOX_ROOT="${MOZ_ROOT}/firefox"
 # Firefox reads user-scope native messaging manifests from ~/.mozilla/... ;
 # also mirror into the resolved root so both layouts stay covered.
-readonly MANIFEST_DIRS=("${HOME}/.mozilla/native-messaging-hosts" "${MOZ_ROOT}/native-messaging-hosts")
+readonly MANIFEST_DIRS=("${HOME}/.mozilla/native-messaging-hosts" "${MOZ_ROOT}/native-messaging-hosts" "${HOME}/.config/mozilla/native-messaging-hosts")
 
 if [[ ! -d "$FIREFOX_ROOT" ]]; then
     log_warn "No Firefox profiles found under ${FIREFOX_ROOT}. Skipping."
