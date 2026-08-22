@@ -1758,6 +1758,22 @@ class EliteInstallerApp(App):
             )
             return msg, True, []
 
+        # Architecture mismatch: e.g., "waybar-git is not available for the 'aarch64' architecture."
+        for l in recent_lines:
+            if "is not available for the" in l and "architecture" in l:
+                m_arch = re.search(r"is not available for the '([^']+)' architecture", l)
+                arch_name = m_arch.group(1) if m_arch else "current"
+                m_pkg = re.search(r"([a-zA-Z0-9@._+\-]+)\s+is not available for the", l)
+                pkg_in_msg = m_pkg.group(1) if m_pkg else pkg_name
+                host_arch = os.uname().machine if hasattr(os, "uname") else arch_name
+                msg = (
+                    f"Architecture Mismatch ({pkg_in_msg}):\n"
+                    f"  • '{pkg_in_msg}' is not available for the '{arch_name}' architecture (PKGBUILD arch=('x86_64')).\n"
+                    f"  • Host is '{host_arch}' (aarch64). Official 'waybar' will be used instead.\n"
+                    f"  • Auto-skipping '{pkg_name}'."
+                )
+                return msg, False, []
+
         pkg_conflicts: list[str] = []
         for l in recent_lines:
             if m := re.search(r"(?i)(?:::\s*|conflicting dependencies:\s*)([a-zA-Z0-9@._+\-]+)\s+and\s+([a-zA-Z0-9@._+\-]+)\s+are in conflict", l):
@@ -2170,6 +2186,26 @@ class EliteInstallerApp(App):
                         self.progress_bar.advance(1)
                         self.log_system(f"◈ Auto-removed conflicting package(s) {pkg_conflicts} and installed {p.name} successfully.")
                         continue
+
+            # SMART RECOVERY 2.5: Auto-skip architecture-unavailable (e.g., waybar-git on aarch64)
+            if "Architecture Mismatch" in error_summary or "is not available for the" in error_summary:
+                self.log_system(f"Auto-skipping {p.name}: {error_summary.splitlines()[0]}", is_err=True)
+                self.update_package_node(p.name, PackageStatus.SKIPPED)
+                self.progress_bar.advance(1)
+                # Fallback for waybar-git -> waybar on aarch64
+                if p.name == "waybar-git":
+                    fallback = "waybar"
+                    # Only fallback if not already in this set and not installed
+                    if fallback not in [x.name for x in packages] and not await AsyncPackageManager.is_package_installed(fallback):
+                        self.log_system(f"Attempting fallback to official '{fallback}' for aarch64...")
+                        fallback_cmd = self.build_command([fallback], is_aur=False)
+                        if await self.execute_pty_command(fallback_cmd) or await AsyncPackageManager.is_package_installed(fallback):
+                            self.log_system(f"Fallback '{fallback}' installed successfully.")
+                            for fb_item in self.manifest.official_packages:
+                                if fb_item.name == fallback:
+                                    self.update_package_node(fallback, PackageStatus.INSTALLED)
+                                    break
+                continue
 
             # SMART RECOVERY 3: Detailed Modal with Overwrite & Remove Conflict options
             self.update_package_node(p.name, PackageStatus.FAILED)

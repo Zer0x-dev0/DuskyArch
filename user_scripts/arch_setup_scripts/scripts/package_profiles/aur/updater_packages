@@ -1,2 +1,5 @@
 # Updater AUR Packages Profile
+# waybar-git: x86_64 only (PKGBUILD arch=('x86_64')). On aarch64 the installer auto-skips
+# this and falls back to official 'waybar' (extra). See 060_package_installation.py
+# Architecture Mismatch handler. Keep commented for aarch64 hosts or let installer handle.
 waybar-git
