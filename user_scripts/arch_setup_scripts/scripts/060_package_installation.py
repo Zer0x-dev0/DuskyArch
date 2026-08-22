@@ -2155,6 +2155,15 @@ class EliteInstallerApp(App):
                 case "retry":
                     self.log_system(f"Retrying package: {p.name}...")
                     self.update_package_node(p.name, PackageStatus.INSTALLING)
+                    retry_cmd = self.build_command([p.name], is_aur)
+                    if await self.execute_pty_command(retry_cmd) or await AsyncPackageManager.is_package_installed(p.name):
+                        self.update_package_node(p.name, PackageStatus.INSTALLED)
+                        self.progress_bar.advance(1)
+                        self.log_system(f"Successfully installed on retry: {p.name}")
+                    else:
+                        self.update_package_node(p.name, PackageStatus.FAILED)
+                        self.log_system(f"Retry failed for {p.name}", is_err=True)
+                        self.progress_bar.advance(1)
                     continue
                 case "manual":
                     with suppress(Exception):
@@ -2181,7 +2190,11 @@ class EliteInstallerApp(App):
                     if await AsyncPackageManager.is_package_installed(p.name):
                         self.update_package_node(p.name, PackageStatus.INSTALLED)
                         self.progress_bar.advance(1)
-                        break
+                        self.log_system(f"Manual intervention succeeded for {p.name}")
+                    else:
+                        self.update_package_node(p.name, PackageStatus.FAILED)
+                        self.log_system(f"Manual intervention did not resolve {p.name}", is_err=True)
+                        self.progress_bar.advance(1)
                     continue
                 case "skip":
                     with suppress(Exception):
@@ -2189,7 +2202,7 @@ class EliteInstallerApp(App):
                     self.update_package_node(p.name, PackageStatus.SKIPPED)
                     self.progress_bar.advance(1)
                     self.log_system(f"Skipped package: {p.name}", is_err=True)
-                    break
+                    continue
                 case "abort" | _:
                     self.log_system("User aborted installation sequence.", is_err=True)
                     self.exit(1)
