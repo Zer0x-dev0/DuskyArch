@@ -1766,6 +1766,54 @@ class EliteInstallerApp(App):
                 if other not in pkg_conflicts:
                     pkg_conflicts.append(other)
 
+        # Paru/AUR fallback: handle "Conflicts found:" -> "    pkg: conflicting_pkg"
+        # and "can not install conflicting packages with --noconfirm"
+        if not pkg_conflicts:
+            has_paru_conflict = any(
+                "conflicts found:" in ln.lower() or "conflicting packages will have to be confirmed manually" in ln.lower() or "can not install conflicting packages with --noconfirm" in ln.lower()
+                for ln in recent_lines
+            )
+            if has_paru_conflict:
+                in_block = False
+                for ln in recent_lines:
+                    low = ln.lower()
+                    if "conflicts found:" in low:
+                        in_block = True
+                        continue
+                    if in_block:
+                        # Match "    waybar-git: waybar" or "waybar-git: waybar"
+                        if m2 := re.search(r"^\s*([a-zA-Z0-9@._+\-]+):\s*([a-zA-Z0-9@._+\-]+)\s*$", ln):
+                            p1, p2 = m2.group(1), m2.group(2)
+                            # Paru shows "pkg-to-install: installed-conflicting-pkg"
+                            if p1 == pkg_name and p2 not in pkg_conflicts and PACKAGE_NAME_REGEX.fullmatch(p2):
+                                pkg_conflicts.append(p2)
+                            elif p2 == pkg_name and p1 not in pkg_conflicts and PACKAGE_NAME_REGEX.fullmatch(p1):
+                                pkg_conflicts.append(p1)
+                            elif pkg_name in ln and PACKAGE_NAME_REGEX.fullmatch(p1) and PACKAGE_NAME_REGEX.fullmatch(p2):
+                                # Fallback: pick the other side
+                                other = p2 if p1 == pkg_name else p1
+                                if other not in pkg_conflicts:
+                                    pkg_conflicts.append(other)
+                        # Exit block after we've passed the error line
+                        if "can not install conflicting packages" in low or "error:" in low and "conflict" in low:
+                            in_block = False
+                # Ultimate fallback: any line containing pkg_name and colon
+                if not pkg_conflicts:
+                    for ln in recent_lines:
+                        if pkg_name in ln and ":" in ln and "conflict" in ln.lower():
+                            if m2 := re.search(r"([a-zA-Z0-9@._+\-]+)\s*:\s*([a-zA-Z0-9@._+\-]+)", ln):
+                                p1, p2 = m2.group(1), m2.group(2)
+                                other = p2 if p1 == pkg_name else (p1 if p2 == pkg_name else None)
+                                if other and other not in pkg_conflicts and PACKAGE_NAME_REGEX.fullmatch(other):
+                                    pkg_conflicts.append(other)
+                # Direct fallback for waybar-git case: search for waybar in recent lines when pkg is waybar-git
+                if not pkg_conflicts and pkg_name == "waybar-git":
+                    for ln in recent_lines:
+                        if "waybar:" in ln.lower() or ": waybar" in ln.lower():
+                            if "waybar" not in pkg_conflicts:
+                                pkg_conflicts.append("waybar")
+                                break
+
         if pkg_conflicts:
             conflicts_str = ", ".join(f"'{p}'" for p in pkg_conflicts)
             msg = (
