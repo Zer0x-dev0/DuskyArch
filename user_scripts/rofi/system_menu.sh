@@ -460,7 +460,7 @@ show_system_menu() {
                 run_term_hold "dysk" dysk
                 ;;
             '󱂵  Disk IO Monitor')
-                run_term "io_monitor.sh" "$SCRIPTS_DIR/drives/io_monitor.sh"
+                run_term "dusky_disk_monitor_io.py" "$SCRIPTS_DIR/drives/dusky_disk_monitor_io.py"
                 ;;
             '󰗮  BTRFS Compression Stats')
                 run_term_hold "btrfs_zstd_compression_stats.sh" "$SCRIPTS_DIR/drives/btrfs_zstd_compression_stats.sh"
