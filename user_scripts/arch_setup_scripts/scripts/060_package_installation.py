@@ -2152,6 +2152,27 @@ class EliteInstallerApp(App):
                 self.exit(1)
                 return
 
+            # Arch guard: waybar-git is x86_64-only, auto-skip on aarch64 and keep official waybar
+            if is_aur and p.name == "waybar-git":
+                try:
+                    host_arch = os.uname().machine
+                except Exception:
+                    host_arch = ""
+                if host_arch == "aarch64":
+                    self.log_system(f"Skipping {p.name} on aarch64: PKGBUILD arch=('x86_64'), using official 'waybar' instead.", is_err=True)
+                    self.update_package_node(p.name, PackageStatus.SKIPPED)
+                    self.progress_bar.advance(1)
+                    if not await AsyncPackageManager.is_package_installed("waybar"):
+                        self.log_system("Ensuring fallback 'waybar' (official, aarch64) is installed...")
+                        fallback_cmd = self.build_command(["waybar"], is_aur=False)
+                        if await self.execute_pty_command(fallback_cmd) or await AsyncPackageManager.is_package_installed("waybar"):
+                            self.log_system("Fallback 'waybar' installed for aarch64.")
+                            for fb_item in self.manifest.official_packages:
+                                if fb_item.name == "waybar":
+                                    self.update_package_node("waybar", PackageStatus.INSTALLED)
+                                    break
+                    continue
+
             cmd = self.build_command([p.name], is_aur)
             if await self.execute_pty_command(cmd):
                 self.update_package_node(p.name, PackageStatus.INSTALLED)
